@@ -1,4 +1,4 @@
-# GLIMPSE用ファイル
+# GLIMPSE2用ファイル
 
 このディレクトリには、GLIMPSE2を使った遺伝子型インピュテーション（欠損遺伝子型の推定）に関連するスクリプトが含まれています。
 
@@ -51,3 +51,29 @@ GLIMPSE2用の参照パネルからチャンクファイルを作成するSLURM�
 **出力:** `reference_panel/split/`ディレクトリ内の各チャンク用バイナリファイル
 
 **リソース要件:** CPU 4コア、メモリ16GB/コア
+
+### run_glimpse.sh
+
+GLIMPSE2 phaseとligateを実行してBAMファイルから遺伝子型imputationを行うメインスクリプト。
+
+**処理内容:**
+- 全染色体（1-22, X）の全チャンクに対してGLIMPSE2_phaseを実行
+- 各染色体内でチャンクをGLIMPSE2_ligateで結合
+- 全染色体を統合して最終VCFファイルを作成
+
+**使用方法:**
+```bash
+sbatch run_glimpse.sh /path/to/sample.bam [output_base_name]
+```
+
+- 出力ベース名は省略可能（デフォルト: glimpse_output）
+- 最終結果: `{BAMファイルと同じディレクトリ}/{出力ベース名}/glimpse_ligate/sample_all_chromosomes.vcf.gz`
+
+**リソース要件:** CPU 1コア、メモリ64GB
+
+## 実行手順
+
+1. `prepare_refpanel.sh` - リファレンスパネル作成
+2. `make_chunks.sh` - チャンク作成
+3. `split_reference.sh` - リファレンスパネル分割
+4. **`run_glimpse.sh` - BAMファイルからimputation実行**

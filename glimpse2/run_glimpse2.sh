@@ -5,14 +5,15 @@
 #SBATCH --mem-per-cpu=64G
 #SBATCH -c 1
 
-# Usage: sbatch run_glimpse.sh /path/to/sample.bam
+# Usage: sbatch run_glimpse.sh /path/to/sample.bam [output_base_name]
 
 CONTAINER="/home/itoyu8/singularity/glimpse_v2.0.0-27-g0919952_20221207.sif"
 BAM=$1
+OUTPUT_BASE_NAME=${2:-"glimpse_output"}
 
 # Set up output directories in the same directory as BAM file
 BAM_DIR=$(dirname "$BAM")
-OUTPUT_BASE="${BAM_DIR}/glimpse_output"
+OUTPUT_BASE="${BAM_DIR}/${OUTPUT_BASE_NAME}"
 
 mkdir -p "${OUTPUT_BASE}/glimpse_impute"
 mkdir -p "${OUTPUT_BASE}/glimpse_ligate"

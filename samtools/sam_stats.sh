@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH -J bamstats
+#SBATCH -J sam_stats
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=8G
 #SBATCH -c 16
 
-# Usage: ./calc_bamstats.sh <reference_fasta> <base_directory>
+# Usage: sbatch sam_stats.sh <reference_fasta> <base_directory>
 # Default reference: /home/itoyu8/database/reference/hg38/v0/Homo_sapiens_assembly38.fasta
 # Default base directory: /home/itoyu8/project/pelt_expansion/rawdata/castle/quilt
 
