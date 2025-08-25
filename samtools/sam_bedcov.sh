@@ -5,22 +5,21 @@
 #SBATCH --mem-per-cpu=8G
 #SBATCH -c 1
 
-# Usage: sbatch sam_bedcov.sh <OUTPUT_DIR> <BAM1> [BAM2] [BAM3] ...
+# Usage: sbatch sam_bedcov.sh <BAM1> [BAM2] [BAM3] ...
 
-if [ "$#" -lt 2 ]; then
-    echo "Usage: sbatch $0 <OUTPUT_DIR> <BAM1> [BAM2] [BAM3] ..."
+if [ "$#" -lt 1 ]; then
+    echo "Usage: sbatch $0 <BAM1> [BAM2] [BAM3] ..."
     exit 1
 fi
 
-OUTPUT_DIR=$1
-shift # Remove first argument, remaining are BAM files
 BAM_FILES=("$@")
+# Set output directory to the same directory as the first BAM file
+OUTPUT_DIR=$(dirname "${BAM_FILES[0]}")
 
 # Fixed paths
 GENOME_FILE="/home/itoyu8/database/reference/hg38/v0/human.hg38.genome"
 
-# Create output directory and log directory
-mkdir -p "${OUTPUT_DIR}"
+# Create log directory
 mkdir -p log
 
 # Generate genome file if needed

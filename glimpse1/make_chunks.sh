@@ -3,7 +3,7 @@
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=16G
-#SBATCH -c 4
+#SBATCH -c 1
 
 CONTAINER="/home/itoyu8/singularity/glimpse1_0.1.0.sif"
 

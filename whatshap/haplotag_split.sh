@@ -5,11 +5,16 @@
 #SBATCH --mem-per-cpu=8G
 #SBATCH -c 8
 
-# Usage: sbatch haplotag_split.sh <PHASED_VCF> <BAM_FILE> <OUTPUT_DIR>
+# Usage: sbatch haplotag_split.sh <PHASED_VCF> <BAM_FILE> [output_base_name] [file_prefix]
 
 PHASED_VCF=$1
 BAM_FILE=$2
-OUTPUT_DIR=$3
+OUTPUT_BASE_NAME=${3:-"whatshap_output"}
+FILE_PREFIX=${4:-"sample"}
+
+# Set up output directory in the same directory as BAM file
+BAM_DIR=$(dirname "$BAM_FILE")
+OUTPUT_DIR="${BAM_DIR}/${OUTPUT_BASE_NAME}"
 
 # Fixed paths
 REF_FASTA_PATH="/home/itoyu8/database/reference/hg38/v0/Homo_sapiens_assembly38.fasta"
@@ -20,14 +25,11 @@ GENOME_FILE="/home/itoyu8/database/reference/hg38/v0/human.hg38.genome"
 mkdir -p "${OUTPUT_DIR}"
 mkdir -p log
 
-# Extract filename prefix from BAM file
-BAM_PREFIX=$(basename "$BAM_FILE" .bam)
-
 # Define output files
-HAPLOTAG_BAM="${OUTPUT_DIR}/${BAM_PREFIX}.haplotag.bam"
-HAPLOTAG_TSV="${OUTPUT_DIR}/${BAM_PREFIX}.haplotype.tsv.gz"
-H1_BAM="${OUTPUT_DIR}/${BAM_PREFIX}.h1.bam"
-H2_BAM="${OUTPUT_DIR}/${BAM_PREFIX}.h2.bam"
+HAPLOTAG_BAM="${OUTPUT_DIR}/${FILE_PREFIX}.haplotag.bam"
+HAPLOTAG_TSV="${OUTPUT_DIR}/${FILE_PREFIX}.haplotype.tsv.gz"
+H1_BAM="${OUTPUT_DIR}/${FILE_PREFIX}.h1.bam"
+H2_BAM="${OUTPUT_DIR}/${FILE_PREFIX}.h2.bam"
 
 # Index phased VCF if needed
 if [ ! -f "${PHASED_VCF}.tbi" ]; then

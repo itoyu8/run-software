@@ -26,26 +26,30 @@ GLIMPSE_chunkを使ってゲノムを適切なチャンクに分割
 **入力**: `reference_panel/1000GP.chr*.sites.vcf.gz`
 **出力**: `/home/itoyu8/database/tools/glimpse1/chunk_output/chunks.chr*.txt`
 
-### 3. calc_gls.sh  
-BAMファイルからGenotype Likelihoods (GLs) を計算
+### 3. run_glimpse1.sh
+BAMファイルからGLIMPSE1による完全なインピュテーションパイプラインを実行
 
-- 事前作成されたサイト情報ファイルを使用
-- bcftools mpileup + call でGL計算
-- 各染色体で独立したVCFファイルを出力
+- GL計算（bcftools mpileup + call）
+- チャンクごとのGLIMPSE_phase実行
+- GLIMPSE_ligateによる染色体単位統合
+- 全染色体のconcatenation
 
 **使用方法**:
 ```bash
-sbatch calc_gls.sh /path/to/sample.bam [output_folder_name]
+sbatch run_glimpse1.sh /path/to/sample.bam [output_base_name]
 ```
 
-**出力**: `{BAMディレクトリ}/{フォルダ名}/sample.chr*.vcf.gz`
-- デフォルトフォルダ名: `glimpse1_gl`
+**出力**: `{BAMディレクトリ}/{出力名}/`
+- `gl_files/`: Genotype likelihood files
+- `glimpse_impute/`: チャンク単位のimputation結果
+- `glimpse_ligate/`: 染色体単位統合結果 + 全染色体統合VCF
+- デフォルト出力名: `glimpse1_output`
 
 ## 実行手順
 
 1. `prepare_refpanel.sh` - リファレンスパネル作成
 2. `make_chunks.sh` - ゲノムのチャンク分割
-3. `calc_gls.sh` - BAMファイルからGL計算
+3. `run_glimpse1.sh` - BAMファイルから完全なインピュテーション実行
 
 全スクリプトSLURMジョブとして実行されます。
 
