@@ -56,4 +56,4 @@ for CHR in {1..22} X; do
     ALL_CHRS="$ALL_CHRS ${OUTPUT_BASE}/glimpse_ligate/sample_chr${CHR}_ligated.bcf"
 done
 
-/home/itoyu8/bin/bcftools/bcftools-1.19/bcftools concat $ALL_CHRS -Oz -o "${OUTPUT_BASE}/glimpse_ligate/sample_all_chromosomes.vcf.gz"
+/home/itoyu8/bin/bcftools/bcftools-1.19/bcftools concat $ALL_CHRS -Oz -o "${OUTPUT_BASE}/sample_all_chromosomes.vcf.gz"

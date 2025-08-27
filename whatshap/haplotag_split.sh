@@ -2,7 +2,7 @@
 #SBATCH -J haplotag_split
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=16G
 #SBATCH -c 8
 
 # Usage: sbatch haplotag_split.sh <PHASED_VCF> <BAM_FILE> [output_base_name] [file_prefix]

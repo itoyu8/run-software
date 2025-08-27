@@ -28,9 +28,28 @@ if [ ! -f "${GENOME_FILE}" ]; then
     awk -v OFS='\t' '{print $1, $2}' "${REF_FASTA_FAI}" > "${GENOME_FILE}"
 fi
 
+# Define the list of chromosomes to process (same as haplotag_pipeline_hifi_allchrom.sh)
+CHROMS=("chr1" "chr2" "chr3" "chr4" "chr5" "chr6" "chr7" "chr8" "chr9" "chr10" "chr11" "chr12" "chr13" "chr14" "chr15" "chr16" "chr17" "chr18" "chr19" "chr20" "chr21" "chr22" "chrX" "chrY")
+
 # Create BED file with 10kb windows
 WINDOWS_BED="${OUTPUT_DIR}/windows.bed"
-/home/itoyu8/bin/bedtools/bedtools2/bin/bedtools makewindows -g "${GENOME_FILE}" -w 10000 > "${WINDOWS_BED}"
+
+# Generate 10kb windows for all chromosomes, then filter to only include target chromosomes
+/home/itoyu8/bin/bedtools/bedtools2/bin/bedtools makewindows -g "${GENOME_FILE}" -w 10000 > "${OUTPUT_DIR}/all_genome_windows.bed"
+
+# Filter to only include target chromosomes in the specified order
+> "${WINDOWS_BED}" # Create empty file
+for CHR_NAME in "${CHROMS[@]}"; do
+    grep "^${CHR_NAME}\s" "${OUTPUT_DIR}/all_genome_windows.bed" >> "${WINDOWS_BED}" || true
+done
+
+# Clean up temporary file
+rm -f "${OUTPUT_DIR}/all_genome_windows.bed"
+
+if [ ! -s "${WINDOWS_BED}" ]; then
+    echo "Error: Windows file is empty after filtering for target chromosomes."
+    exit 1
+fi
 
 # Run samtools bedcov
 OUTPUT_FILE="${OUTPUT_DIR}/bedcov_results.txt"
