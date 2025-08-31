@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH -p rjobs,mjobs
 #SBATCH -J quilt_diploid
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
@@ -6,6 +7,7 @@
 #SBATCH -c 1
 
 # Usage: sbatch run_quilt.sh /path/to/sample.bam [output_folder_name]
+# Note: output_folder_name can include subdirectories (e.g., "results/quilt_analysis")
 
 CONTAINER="/home/itoyu8/singularity/quilt_v0.1.0.sif"
 BAM=$1
@@ -16,7 +18,7 @@ BAM_DIR=$(dirname "$BAM")
 OUTPUT_BASE="${BAM_DIR}/${OUTPUT_FOLDER_NAME}"
 PREPARED_REFERENCE_DIR="/home/itoyu8/database/tools/quilt/output/RData"
 CHUNK_DIR="/home/itoyu8/database/tools/quilt/chunk_output"
-BCFTOOLS="/home/itoyu8/bin/bcftools/bcftools-1.19/bcftools"
+BCFTOOLS="/home/itoyu8/bin/bcftools/bcftools-1.22/bcftools"
 
 # Parameters
 NGEN=100
@@ -86,4 +88,5 @@ done
 all_vcf_list="${OUTPUT_BASE}/ligate/all_chromosomes.txt"
 ls -1v "${OUTPUT_BASE}/ligate/quilt2.diploid.chr"*.ligated.vcf.gz > "$all_vcf_list" 2>/dev/null
 
-[ -s "$all_vcf_list" ] && "$BCFTOOLS" concat --output-type z --output "${OUTPUT_BASE}/quilt2.diploid.all_chromosomes.vcf.gz" --file-list "$all_vcf_list"
+[ -s "$all_vcf_list" ] && "$BCFTOOLS" concat --output-type z --output "${OUTPUT_BASE}/sample.all_chroms.vcf.gz" --file-list "$all_vcf_list"
+[ -f "${OUTPUT_BASE}/sample.all_chroms.vcf.gz" ] && "$BCFTOOLS" index -f "${OUTPUT_BASE}/sample.all_chroms.vcf.gz"

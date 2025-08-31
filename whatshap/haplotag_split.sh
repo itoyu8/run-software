@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH -p rjobs,mjobs
 #SBATCH -J haplotag_split
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
@@ -17,9 +18,9 @@ BAM_DIR=$(dirname "$BAM_FILE")
 OUTPUT_DIR="${BAM_DIR}/${OUTPUT_BASE_NAME}"
 
 # Fixed paths
-REF_FASTA_PATH="/home/itoyu8/database/reference/hg38/v0/Homo_sapiens_assembly38.fasta"
+REF_FASTA_PATH="/home/itoyu8/database/reference/hg38/GRCh38.d1.vd1/GRCh38.d1.vd1.fa"
 WHATSHAP_CONTAINER_SIF_PATH="/home/itoyu8/singularity/scarpia-python_0.2.0.sif"
-GENOME_FILE="/home/itoyu8/database/reference/hg38/v0/human.hg38.genome"
+GENOME_FILE="/home/itoyu8/database/reference/hg38/GRCh38.d1.vd1/human.hg38.genome"
 
 # Create output directory and log directory
 mkdir -p "${OUTPUT_DIR}"

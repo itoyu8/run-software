@@ -1,15 +1,17 @@
 #!/bin/bash
-#SBATCH -J glimpse
+#SBATCH -p rjobs,mjobs
+#SBATCH -J glimpse2
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=64G
 #SBATCH -c 1
 
 # Usage: sbatch run_glimpse.sh /path/to/sample.bam [output_base_name]
+# Note: output_base_name can include subdirectories (e.g., "results/glimpse_analysis")
 
 CONTAINER="/home/itoyu8/singularity/glimpse_v2.0.0-27-g0919952_20221207.sif"
 BAM=$1
-OUTPUT_BASE_NAME=${2:-"glimpse_output"}
+OUTPUT_BASE_NAME=${2:-"glimpse2_output"}
 
 # Set up output directories in the same directory as BAM file
 BAM_DIR=$(dirname "$BAM")
@@ -56,4 +58,5 @@ for CHR in {1..22} X; do
     ALL_CHRS="$ALL_CHRS ${OUTPUT_BASE}/glimpse_ligate/sample_chr${CHR}_ligated.bcf"
 done
 
-/home/itoyu8/bin/bcftools/bcftools-1.19/bcftools concat $ALL_CHRS -Oz -o "${OUTPUT_BASE}/sample_all_chromosomes.vcf.gz"
+/home/itoyu8/bin/bcftools/bcftools-1.22/bcftools concat $ALL_CHRS -Oz -o "${OUTPUT_BASE}/sample.all_chroms.vcf.gz"
+/home/itoyu8/bin/bcftools/bcftools-1.22/bcftools index -f "${OUTPUT_BASE}/sample.all_chroms.vcf.gz"

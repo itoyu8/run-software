@@ -2,49 +2,52 @@
 #SBATCH -J sam_stats
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
-#SBATCH --mem-per-cpu=8G
-#SBATCH -c 16
+#SBATCH --mem-per-cpu=4G
+#SBATCH -c 32
 
-# Usage: sbatch sam_stats.sh <reference_fasta> <base_directory>
-# Default reference: /home/itoyu8/database/reference/hg38/v0/Homo_sapiens_assembly38.fasta
-# Default base directory: /home/itoyu8/project/pelt_expansion/rawdata/castle/quilt
+# Usage: ./sam_stats.sh [--reference hg38|chm13] <input_bam_file1> [input_bam_file2] [...]
 
-REFERENCE=${1:-/home/itoyu8/database/reference/hg38/v0/Homo_sapiens_assembly38.fasta}
-BASE_DIR=${2:-/home/itoyu8/project/pelt_expansion/rawdata/castle/quilt}
+INPUT_BAMS=()
+REFERENCE_TYPE="hg38"
 
-echo "Processing BAM files with reference: $REFERENCE"
-echo "Base directory: $BASE_DIR"
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --reference)
+            if [ "$2" = "chm13" ]; then
+                REFERENCE_TYPE="chm13"
+            elif [ "$2" = "hg38" ]; then
+                REFERENCE_TYPE="hg38"
+            else
+                echo "Error: --reference must be 'hg38' or 'chm13'"
+                exit 1
+            fi
+            shift 2
+            ;;
+        *)
+            INPUT_BAMS+=("$1")
+            shift
+            ;;
+    esac
+done
 
-# Process all BAM files (hardcoded paths based on directory structure)
+if [ ${#INPUT_BAMS[@]} -eq 0 ]; then
+    echo "Error: At least one BAM file argument is required"
+    echo "Usage: $0 [--reference hg38|chm13] <input_bam_file1> [input_bam_file2] [...]"
+    exit 1
+fi
 
-# HiFi samples
-echo "Processing HiFi samples..."
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/hifi/H1437/BL1437.hifi.sorted.bam" > "$BASE_DIR/hifi/H1437/BL1437.hifi.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/hifi/H2009/BL2009.sorted.bam" > "$BASE_DIR/hifi/H2009/BL2009.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/hifi/HCC1937/HCC1937BL.sorted.bam" > "$BASE_DIR/hifi/HCC1937/HCC1937BL.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/hifi/HCC1954/HCC1954BL.sorted.bam" > "$BASE_DIR/hifi/HCC1954/HCC1954BL.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/hifi/Hs578T/normal.sorted.bam" > "$BASE_DIR/hifi/Hs578T/normal.sorted.stats.txt"
+THREADS=${SLURM_CPUS_PER_TASK:-32}
 
-# Illumina samples
-echo "Processing Illumina samples..."
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/illumina/H1437/BL1437.markdup.bam" > "$BASE_DIR/illumina/H1437/BL1437.markdup.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/illumina/H2009/BL2009.markdup.bam" > "$BASE_DIR/illumina/H2009/BL2009.markdup.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/illumina/HCC1937/HCC1937BL.markdup.bam" > "$BASE_DIR/illumina/HCC1937/HCC1937BL.markdup.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/illumina/HCC1954/HCC1954BL.markdup.bam" > "$BASE_DIR/illumina/HCC1954/HCC1954BL.markdup.stats.txt"
+if [ "$REFERENCE_TYPE" = "chm13" ]; then
+    REFERENCE_GENOME_PATH="/home/itoyu8/database/reference/chm13/v2.0/chm13v2.0_maskedY_rCRS.fa"
+else
+    REFERENCE_GENOME_PATH="/home/itoyu8/database/reference/hg38/GRCh38.d1.vd1/GRCh38.d1.vd1.fa"
+fi
 
-# ONT samples
-echo "Processing ONT samples..."
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ont/H1437/BL1437.ont.sorted.bam" > "$BASE_DIR/ont/H1437/BL1437.ont.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ont/H2009/BL2009.ont.sorted.bam" > "$BASE_DIR/ont/H2009/BL2009.ont.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ont/HCC1395/HCC1395BL.sorted.ont.bam" > "$BASE_DIR/ont/HCC1395/HCC1395BL.sorted.ont.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ont/HCC1937/HCC1937BL.sorted.ont.bam" > "$BASE_DIR/ont/HCC1937/HCC1937BL.sorted.ont.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ont/HCC1954/HCC1954BL.sorted.ont.bam" > "$BASE_DIR/ont/HCC1954/HCC1954BL.sorted.ont.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ont/Hs578T/Hs578Bst.ont.sorted.bam" > "$BASE_DIR/ont/Hs578T/Hs578Bst.ont.sorted.stats.txt"
-
-# UL samples
-echo "Processing UL samples..."
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ul/H1437/BL1437.ul.sorted.bam" > "$BASE_DIR/ul/H1437/BL1437.ul.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ul/H2009/BL2009.ul.sorted.bam" > "$BASE_DIR/ul/H2009/BL2009.ul.sorted.stats.txt"
-/home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ 16 --reference "$REFERENCE" "$BASE_DIR/ul/HCC1937/HCC1937BL.ul.sorted.bam" > "$BASE_DIR/ul/HCC1937/HCC1937BL.ul.sorted.stats.txt"
-
-echo "All BAM stats calculations completed."
+for INPUT_BAM in "${INPUT_BAMS[@]}"; do
+    INPUT_DIR=$(dirname "$INPUT_BAM")
+    BASE_NAME=$(basename "$INPUT_BAM" .bam)
+    OUTPUT_STATS="${INPUT_DIR}/${BASE_NAME}.stats.txt"
+    
+    /home/itoyu8/bin/samtools/samtools-1.19/samtools stats -@ ${THREADS} --reference "${REFERENCE_GENOME_PATH}" "${INPUT_BAM}" > "${OUTPUT_STATS}"
+done
