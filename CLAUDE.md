@@ -91,3 +91,37 @@ Standard SBATCH settings:
 - Memory: `--mem-per-cpu=4G`
 - CPUs: `-c 32`
 - Queue: `-p rjobs,mjobs`
+
+## Docker Image Management
+
+### Building and Pushing to Docker Hub
+IMPORTANT: Always use a two-step tagging process. Direct tagging may not be recognized properly.
+
+```bash
+# Step 1: Build with platform specification and temporary tag
+docker build --platform linux/amd64 -t [image_name]-amd64:[version] -f ./Dockerfile .
+
+# Step 2: Re-tag for Docker Hub (this step is REQUIRED, don't skip)
+# Direct push without re-tagging may fail to be recognized
+docker tag [image_name]-amd64:[version] itoyu8/[image_name]:[version]
+
+# Step 3: Push to Docker Hub
+docker push itoyu8/[image_name]:[version]
+```
+
+Example workflow:
+```bash
+# Build rasusa image
+docker build --platform linux/amd64 -t rasusa-amd64:0.1.0 -f ./Dockerfile .
+
+# Re-tag (REQUIRED - don't skip this intermediate step)
+docker tag rasusa-amd64:0.1.0 itoyu8/rasusa:0.1.0
+
+# Push to Docker Hub
+docker push itoyu8/rasusa:0.1.0
+```
+
+### Why Two-Step Tagging?
+- Past experience shows that skipping the intermediate tagging step causes recognition issues
+- The re-tagging step ensures Docker properly registers the image for push
+- Always go through the temporary tag → Docker Hub tag workflow

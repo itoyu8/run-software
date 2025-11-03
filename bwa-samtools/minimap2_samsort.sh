@@ -4,9 +4,12 @@
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=4G
-#SBATCH -c 32
+#SBATCH -c 16
 
 # Usage: ./minimap2_samsort.sh --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>
+
+# Start time
+START_TIME=$(date +%s)
 
 # Parse arguments
 SEQ_TYPE=""
@@ -62,7 +65,7 @@ if [ -z "$SEQ_TYPE" ] || [ -z "$INPUT_FASTQ" ] || [ -z "$OUTPUT_BASE_NAME" ]; th
     echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>"
     exit 1
 fi
-THREADS=${SLURM_CPUS_PER_TASK:-32}
+THREADS=${SLURM_CPUS_PER_TASK:-16}
 
 INPUT_DIR=$(dirname "$INPUT_FASTQ")
 
@@ -93,10 +96,20 @@ if [ ! -f "${REFERENCE_MMI_PATH}" ]; then
         || { echo "ERROR: Reference genome indexing failed."; exit 1; }
 fi
 
+echo "Starting minimap2 alignment and BAM conversion..."
+ALIGN_START=$(date +%s)
+
 /home/itoyu8/bin/minimap2/minimap2-2.28/minimap2 ${MINIMAP2_PRESET} -t ${THREADS} "${REFERENCE_MMI_PATH}" "${INPUT_FASTQ}" | \
 /home/itoyu8/bin/samtools/samtools-1.19/samtools view -bh -@ ${THREADS} - \
     > "${TEMP_BAM_FILE}" \
     || { echo "ERROR: Alignment and BAM conversion failed."; exit 1; }
+
+ALIGN_END=$(date +%s)
+ALIGN_ELAPSED=$((ALIGN_END - ALIGN_START))
+echo "Minimap2 alignment and BAM conversion completed in ${ALIGN_ELAPSED} seconds"
+
+echo "Starting BAM sorting and indexing..."
+SORT_START=$(date +%s)
 
 /home/itoyu8/bin/samtools/samtools-1.19/samtools sort -@ "${THREADS}" -o "${FINAL_BAM_FILE}" "${TEMP_BAM_FILE}" \
     || { echo "ERROR: BAM sorting failed."; exit 1; }
@@ -104,4 +117,19 @@ fi
 /home/itoyu8/bin/samtools/samtools-1.19/samtools index "${FINAL_BAM_FILE}" "${FINAL_BAM_INDEX}" \
     || { echo "ERROR: BAM indexing failed."; exit 1; }
 
+SORT_END=$(date +%s)
+SORT_ELAPSED=$((SORT_END - SORT_START))
+echo "BAM sorting and indexing completed in ${SORT_ELAPSED} seconds"
+
 rm -f "${TEMP_BAM_FILE}"
+
+# End time
+END_TIME=$(date +%s)
+TOTAL_ELAPSED=$((END_TIME - START_TIME))
+
+echo ""
+echo "=== Processing Summary ==="
+echo "Minimap2 alignment + BAM conversion: ${ALIGN_ELAPSED} seconds"
+echo "BAM sorting + indexing: ${SORT_ELAPSED} seconds"
+echo "Total time: ${TOTAL_ELAPSED} seconds"
+echo "Output: ${FINAL_BAM_FILE}"
