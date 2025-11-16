@@ -1,14 +1,17 @@
 #!/bin/bash
 #SBATCH -p rjobs,mjobs
-#SBATCH -J quilt_diploid_mthr
+#SBATCH -J quilt_multi
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=8G
 #SBATCH -c 16
 
-# Usage: sbatch run_quilt_mthr.sh /path/to/sample.bam [output_folder_name]
+# Usage: sbatch run_quilt_multi.sh /path/to/sample.bam [output_folder_name]
 # Note: output_folder_name can include subdirectories (e.g., "results/quilt_analysis")
 # This version runs chromosomes in parallel using 16 threads
+
+# Start time
+START_TIME=$(date +%s)
 
 CONTAINER="/home/itoyu8/singularity/quilt_v0.1.0.sif"
 BAM=$1
@@ -105,9 +108,10 @@ for chr_num in {1..22}; do
     process_chromosome "$chr" &
 
     # Limit number of parallel jobs
-    if (( $(jobs -r | wc -l) >= THREADS )); then
-        wait -n
-    fi
+    # Wait for any job to complete when reaching thread limit
+    while (( $(jobs -r | wc -l) >= THREADS )); do
+        sleep 1
+    done
 done
 
 # Wait for all background jobs to complete
@@ -119,5 +123,17 @@ echo "All chromosomes processed"
 all_vcf_list="${OUTPUT_BASE}/ligate/all_chromosomes.txt"
 ls -1v "${OUTPUT_BASE}/ligate/quilt2.diploid.chr"*.ligated.vcf.gz > "$all_vcf_list" 2>/dev/null
 
-[ -s "$all_vcf_list" ] && "$BCFTOOLS" concat --output-type z --output "${OUTPUT_BASE}/sample.all_chroms.vcf.gz" --file-list "$all_vcf_list"
-[ -f "${OUTPUT_BASE}/sample.all_chroms.vcf.gz" ] && "$BCFTOOLS" index -f "${OUTPUT_BASE}/sample.all_chroms.vcf.gz"
+final_vcf="${OUTPUT_BASE}/quilt.phased.vcf.gz"
+[ -s "$all_vcf_list" ] && "$BCFTOOLS" concat --output-type z --output "$final_vcf" --file-list "$all_vcf_list"
+[ -f "$final_vcf" ] && "$BCFTOOLS" index -f "$final_vcf"
+
+# End time and summary
+END_TIME=$(date +%s)
+TOTAL_ELAPSED=$((END_TIME - START_TIME))
+
+echo ""
+echo "=== Processing Summary ==="
+echo "Total time: ${TOTAL_ELAPSED} seconds"
+echo ""
+echo "Pipeline completed successfully"
+echo "Final output: ${final_vcf}"

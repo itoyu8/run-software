@@ -88,5 +88,6 @@ done
 all_vcf_list="${OUTPUT_BASE}/ligate/all_chromosomes.txt"
 ls -1v "${OUTPUT_BASE}/ligate/quilt2.diploid.chr"*.ligated.vcf.gz > "$all_vcf_list" 2>/dev/null
 
-[ -s "$all_vcf_list" ] && "$BCFTOOLS" concat --output-type z --output "${OUTPUT_BASE}/sample.all_chroms.vcf.gz" --file-list "$all_vcf_list"
-[ -f "${OUTPUT_BASE}/sample.all_chroms.vcf.gz" ] && "$BCFTOOLS" index -f "${OUTPUT_BASE}/sample.all_chroms.vcf.gz"
+final_vcf="${OUTPUT_BASE}/quilt.phased.vcf.gz"
+[ -s "$all_vcf_list" ] && "$BCFTOOLS" concat --output-type z --output "$final_vcf" --file-list "$all_vcf_list"
+[ -f "$final_vcf" ] && "$BCFTOOLS" index -f "$final_vcf"

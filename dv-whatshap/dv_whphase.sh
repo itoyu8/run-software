@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -p rjobs,mjobs
-#SBATCH -J dv_whatshap
+#SBATCH -J dv_whphase
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=8G
@@ -147,20 +147,14 @@ echo "Whatshap time: ${WHATSHAP_ELAPSED} seconds"
 
 # Step 4: Index with tabix
 echo "Indexing VCF files with tabix..."
-singularity exec \
-    --bind /home/itoyu8/:/home/itoyu8/ \
-    --bind /lustre1:/lustre1/ \
-    "${WHATSHAP_SIF}" tabix -p vcf "${UNPHASED_OUTPUT}"
-singularity exec \
-    --bind /home/itoyu8/:/home/itoyu8/ \
-    --bind /lustre1:/lustre1/ \
-    "${WHATSHAP_SIF}" tabix -p vcf "${PHASED_OUTPUT}"
+tabix -p vcf "${UNPHASED_OUTPUT}"
+tabix -p vcf "${PHASED_OUTPUT}"
 
 echo "Indexing completed"
 
 # Cleanup intermediate file if bcftools was used
 if [ "$REFERENCE_TYPE" = "hg38" ]; then
-    rm -f "${DV_OUTPUT}"
+    rm -f "${DV_OUTPUT}" "${DV_OUTPUT}.tbi"
 fi
 
 # End time
