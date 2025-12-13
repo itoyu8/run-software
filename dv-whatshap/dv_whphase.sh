@@ -5,7 +5,7 @@
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=8G
 #SBATCH -c 16
-# Usage: ./dv_whatshap.sh --type <ont|hifi> [--reference hg38|chm13] <input.bam>
+# Usage: ./dv_whphase.sh --type <ont|hifi> [--reference hg38|chm13] [--strict-filter] <input.bam>
 
 # Start time
 START_TIME=$(date +%s)
@@ -14,6 +14,7 @@ START_TIME=$(date +%s)
 SEQ_TYPE=""
 INPUT_BAM=""
 REFERENCE_TYPE="hg38"
+STRICT_FILTER=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        --strict-filter)
+            STRICT_FILTER=true
+            shift
+            ;;
         *)
             INPUT_BAM="$1"
             shift
@@ -49,6 +54,9 @@ if [ -z "$SEQ_TYPE" ] || [ -z "$INPUT_BAM" ]; then
     echo "Error: --type and input BAM file are required"
     exit 1
 fi
+
+# Convert input BAM to absolute path
+INPUT_BAM=$(realpath "$INPUT_BAM")
 
 # Thread definition
 THREADS=${SLURM_CPUS_PER_TASK:-16}
@@ -71,18 +79,23 @@ fi
 DEEPVARIANT_SIF="/home/itoyu8/singularity/deepvariant_1.9.0.sif"
 WHATSHAP_SIF="/home/itoyu8/singularity/scarpia-python_0.2.0.sif"
 
-# BCFtools and gnomAD (only for hg38)
+# BCFtools path
 BCFTOOLS="/home/itoyu8/bin/bcftools/bcftools-1.19/bcftools"
-GNOMAD_VCF="/home/itoyu8/database/reference/gnomAD_4.1/gnomad.genomes.v4.1.sites.merged.light.vcf.bgz"
 
-# Get base name and directory from input BAM
-BASENAME=$(basename "$INPUT_BAM" .bam)
+# [ARCHIVED] gnomAD VCF for filtering (currently unused):
+# GNOMAD_VCF="/home/itoyu8/database/reference/gnomAD_4.1/gnomad.genomes.v4.1.sites.merged.light.vcf.bgz"
+
+# Get directory from input BAM (now absolute path)
 OUTPUT_DIR=$(dirname "$INPUT_BAM")
 
 # Output files in same directory as input BAM
-DV_OUTPUT="${OUTPUT_DIR}/normal_dv.vcf.gz"
-UNPHASED_OUTPUT="${OUTPUT_DIR}/snp.unphased.vcf.gz"
-PHASED_OUTPUT="${OUTPUT_DIR}/snp.phased.vcf.gz"
+DV_OUTPUT="${OUTPUT_DIR}/dv.vcf.gz"
+FILTERED_OUTPUT="${OUTPUT_DIR}/dv.filtered.vcf.gz"
+PHASED_OUTPUT="${OUTPUT_DIR}/phased.vcf.gz"
+
+# DeepVariant intermediate directory (avoid /tmp capacity issues in Singularity)
+DV_TEMP_DIR="${OUTPUT_DIR}/dv_intermediate"
+mkdir -p "${DV_TEMP_DIR}"
 
 mkdir -p log
 
@@ -98,6 +111,7 @@ singularity run --nv \
     --ref "${REFERENCE_GENOME_PATH}" \
     --reads "${INPUT_BAM}" \
     --output_vcf "${DV_OUTPUT}" \
+    --intermediate_results_dir "${DV_TEMP_DIR}" \
     --num_shards "${THREADS}"
 
 DV_END=$(date +%s)
@@ -105,25 +119,56 @@ DV_ELAPSED=$((DV_END - DV_START))
 echo "DeepVariant completed: ${DV_OUTPUT}"
 echo "DeepVariant time: ${DV_ELAPSED} seconds"
 
-# Step 2: Filter with bcftools (only for hg38)
-BCFTOOLS_START=$(date +%s)
+# Step 2: Pass DV output to WhatsHap (with optional strict filter)
+#
+# [ARCHIVED] gnomAD filtering commands - can be restored if needed:
+# ----------------------------------------------------------------
+# # Filter for known SNPs only (hg38):
+# "${BCFTOOLS}" isec -n=2 -w2 -c snps -O z -o "${UNPHASED_OUTPUT}" "${GNOMAD_VCF}" "${DV_OUTPUT}"
+#
+# # Filter for known variants including indels (hg38):
+# "${BCFTOOLS}" isec -n=2 -w2 -O z -o "${UNPHASED_OUTPUT}" "${GNOMAD_VCF}" "${DV_OUTPUT}"
+#
+# # gnomAD + GQ + VAF filter (hg38):
+# GNOMAD_TEMP="${OUTPUT_DIR}/temp_gnomad.vcf.gz"
+# "${BCFTOOLS}" isec -n=2 -w2 -O z -o "${GNOMAD_TEMP}" "${GNOMAD_VCF}" "${DV_OUTPUT}"
+# tabix -p vcf "${GNOMAD_TEMP}"
+# "${BCFTOOLS}" view -f PASS -m2 -M2 --genotype het "${GNOMAD_TEMP}" | \
+# "${BCFTOOLS}" filter -i "FORMAT/GQ >= 20 && FORMAT/VAF >= 0.3 && FORMAT/VAF <= 0.7" -O z -o "${FILTERED_OUTPUT}"
+# rm -f "${GNOMAD_TEMP}" "${GNOMAD_TEMP}.tbi"
+# ----------------------------------------------------------------
 
-if [ "$REFERENCE_TYPE" = "hg38" ]; then
-    echo "Filtering VCF with bcftools for known SNPs..."
-    "${BCFTOOLS}" isec -n=2 -w2 -c snps -O z -o "${UNPHASED_OUTPUT}" "${GNOMAD_VCF}" "${DV_OUTPUT}"
-    echo "Filtered VCF: ${UNPHASED_OUTPUT}"
+STRICT_FILTER_ELAPSED=0
+WHATSHAP_INPUT="${DV_OUTPUT}"
+
+if [ "$STRICT_FILTER" = true ]; then
+    echo "Applying strict filter (GQ + VAF)..."
+    STRICT_FILTER_START=$(date +%s)
+
+    MIN_GQ=20
+    MIN_VAF=0.3
+    MAX_VAF=0.7
+
+    # GQ + VAF filter for heterozygous biallelic variants
+    "${BCFTOOLS}" view \
+        -f PASS \
+        -m2 -M2 \
+        --genotype het \
+        "${DV_OUTPUT}" | \
+    "${BCFTOOLS}" filter \
+        -i "FORMAT/GQ >= ${MIN_GQ} && FORMAT/VAF >= ${MIN_VAF} && FORMAT/VAF <= ${MAX_VAF}" \
+        -O z -o "${FILTERED_OUTPUT}"
+
+    tabix -p vcf "${FILTERED_OUTPUT}"
+    WHATSHAP_INPUT="${FILTERED_OUTPUT}"
+
+    STRICT_FILTER_END=$(date +%s)
+    STRICT_FILTER_ELAPSED=$((STRICT_FILTER_END - STRICT_FILTER_START))
+    echo "Strict filter completed: ${FILTERED_OUTPUT}"
+    echo "Strict filter time: ${STRICT_FILTER_ELAPSED} seconds"
 else
-    echo "Skipping bcftools filtering for CHM13"
-    mv "${DV_OUTPUT}" "${UNPHASED_OUTPUT}"
+    echo "No filtering applied - passing DeepVariant output directly to WhatsHap"
 fi
-
-BCFTOOLS_END=$(date +%s)
-BCFTOOLS_ELAPSED=$((BCFTOOLS_END - BCFTOOLS_START))
-echo "BCFtools filtering time: ${BCFTOOLS_ELAPSED} seconds"
-
-# Total time for DeepVariant + bcftools
-DV_BCFTOOLS_TOTAL=$((DV_ELAPSED + BCFTOOLS_ELAPSED))
-echo "DeepVariant + BCFtools total: ${DV_BCFTOOLS_TOTAL} seconds"
 
 # Step 3: Run Whatshap
 echo "Running Whatshap for phasing..."
@@ -137,7 +182,7 @@ singularity exec --nv \
     --ignore-read-groups \
     --distrust-genotypes \
     -o "${PHASED_OUTPUT}" \
-    "${UNPHASED_OUTPUT}" \
+    "${WHATSHAP_INPUT}" \
     "${INPUT_BAM}"
 
 WHATSHAP_END=$(date +%s)
@@ -145,17 +190,10 @@ WHATSHAP_ELAPSED=$((WHATSHAP_END - WHATSHAP_START))
 echo "Whatshap completed: ${PHASED_OUTPUT}"
 echo "Whatshap time: ${WHATSHAP_ELAPSED} seconds"
 
-# Step 4: Index with tabix
-echo "Indexing VCF files with tabix..."
-tabix -p vcf "${UNPHASED_OUTPUT}"
+# Step 3: Index phased VCF with tabix
+echo "Indexing phased VCF with tabix..."
 tabix -p vcf "${PHASED_OUTPUT}"
-
 echo "Indexing completed"
-
-# Cleanup intermediate file if bcftools was used
-if [ "$REFERENCE_TYPE" = "hg38" ]; then
-    rm -f "${DV_OUTPUT}" "${DV_OUTPUT}.tbi"
-fi
 
 # End time
 END_TIME=$(date +%s)
@@ -163,10 +201,16 @@ TOTAL_ELAPSED=$((END_TIME - START_TIME))
 
 echo ""
 echo "=== Processing Summary ==="
-echo "DeepVariant + BCFtools: ${DV_BCFTOOLS_TOTAL} seconds"
-echo "Whatshap: ${WHATSHAP_ELAPSED} seconds"
+echo "DeepVariant: ${DV_ELAPSED} seconds"
+if [ "$STRICT_FILTER" = true ]; then
+    echo "Strict filter: ${STRICT_FILTER_ELAPSED} seconds"
+fi
+echo "WhatsHap: ${WHATSHAP_ELAPSED} seconds"
 echo "Total time: ${TOTAL_ELAPSED} seconds"
 echo ""
 echo "Pipeline completed successfully"
-echo "Unphased VCF: ${UNPHASED_OUTPUT}"
+echo "DeepVariant VCF: ${DV_OUTPUT}"
+if [ "$STRICT_FILTER" = true ]; then
+    echo "Filtered VCF: ${FILTERED_OUTPUT}"
+fi
 echo "Phased VCF: ${PHASED_OUTPUT}"

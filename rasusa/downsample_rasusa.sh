@@ -5,18 +5,13 @@
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=4G
 #SBATCH -c 16
-# Usage: ./downsample_rasusa.sh --coverage 30 [--reference hg38|chm13] <input.fastq.gz> [<input2.fastq.gz> ...]
-
-# Start time
-START_TIME=$(date +%s)
-
-# Thread definition
-THREADS=${SLURM_CPUS_PER_TASK:-16}
+# Usage: sbatch downsample_rasusa.sh --coverage 30 [--reference hg38|chm13] [-o output.fastq.gz] <input.fastq.gz>
 
 # Parse arguments
 COVERAGE=""
 REFERENCE_TYPE="hg38"
-INPUT_FILES=()
+OUTPUT_FILE=""
+INPUT_FILE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -35,54 +30,34 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        -o|--output)
+            OUTPUT_FILE="$2"
+            shift 2
+            ;;
         *)
-            INPUT_FILES+=("$1")
+            INPUT_FILE="$1"
             shift
             ;;
     esac
 done
 
-# Check if coverage is provided
-if [ -z "$COVERAGE" ]; then
-    echo "Error: --coverage option is required"
-    echo "Usage: ./downsample_rasusa.sh --coverage 30 [--reference hg38|chm13] <input.fastq.gz> [<input2.fastq.gz> ...]"
+if [ -z "$COVERAGE" ] || [ -z "$INPUT_FILE" ]; then
+    echo "Usage: sbatch $0 --coverage 30 [--reference hg38|chm13] [-o output.fastq.gz] <input.fastq.gz>"
     exit 1
 fi
 
-# Check if input files are provided
-if [ ${#INPUT_FILES[@]} -eq 0 ]; then
-    echo "Error: No input files provided"
-    echo "Usage: ./downsample_rasusa.sh --coverage 30 [--reference hg38|chm13] <input.fastq.gz> [<input2.fastq.gz> ...]"
-    exit 1
-fi
+# Convert to absolute paths for Singularity compatibility
+INPUT_FILE=$(realpath "$INPUT_FILE")
 
 # Set genome size based on reference type
-# hg38/GRCh38: Effective mappable size ~2.91 Gb
-# CHM13 T2T: ~3.055 Gb (gaps are filled, so physical/effective size are similar)
 if [ "$REFERENCE_TYPE" = "chm13" ]; then
     GENOME_SIZE="3.055gb"
 else
-    # Use effective genome size for hg38 to match stats calculation
     GENOME_SIZE="2.91gb"
 fi
 
-# Singularity container path
-CONTAINER="/home/itoyu8/singularity/rasusa_0.1.0.sif"
-
-# Random seed for reproducibility
-SEED=42
-
-# Compression level
-COMPRESSION_LEVEL=6
-
-# Process each input file
-for INPUT_FILE in "${INPUT_FILES[@]}"; do
-    if [ ! -f "$INPUT_FILE" ]; then
-        echo "Error: File not found: $INPUT_FILE"
-        continue
-    fi
-
-    # Get base name without extension
+# Set output file name
+if [ -z "$OUTPUT_FILE" ]; then
     BASENAME=$(basename "$INPUT_FILE")
     if [[ "$BASENAME" == *.fastq.gz ]] || [[ "$BASENAME" == *.fq.gz ]]; then
         BASENAME="${BASENAME%.gz}"
@@ -92,39 +67,25 @@ for INPUT_FILE in "${INPUT_FILES[@]}"; do
         BASENAME="${BASENAME%.fastq}"
         BASENAME="${BASENAME%.fq}"
     fi
-
-    # Output file in current directory
     OUTPUT_FILE="${BASENAME}.downsampled_${COVERAGE}x.fastq.gz"
+fi
 
-    echo "Processing: $INPUT_FILE"
-    echo "Reference: $REFERENCE_TYPE (Genome size: $GENOME_SIZE)"
-    echo "Coverage: ${COVERAGE}x"
-    echo "Output: $OUTPUT_FILE"
+# Create log directory
+mkdir -p log
 
-    # Start time for this file
-    FILE_START=$(date +%s)
+# Run rasusa
+START_TIME=$(date +%s)
 
-    # Run rasusa via Singularity
-    singularity exec "$CONTAINER" \
-        rasusa reads \
-        --coverage "$COVERAGE" \
-        --genome-size "$GENOME_SIZE" \
-        --output "$OUTPUT_FILE" \
-        --seed "$SEED" \
-        "$INPUT_FILE"
+singularity exec /home/itoyu8/singularity/rasusa_0.1.0.sif \
+    rasusa reads \
+    --coverage "$COVERAGE" \
+    --genome-size "$GENOME_SIZE" \
+    --output "$OUTPUT_FILE" \
+    --seed 42 \
+    "$INPUT_FILE"
 
-    # End time for this file
-    FILE_END=$(date +%s)
-    FILE_ELAPSED=$((FILE_END - FILE_START))
-
-    echo "Completed: $OUTPUT_FILE"
-    echo "Time taken: ${FILE_ELAPSED} seconds"
-    echo ""
-done
-
-# End time
 END_TIME=$(date +%s)
-TOTAL_ELAPSED=$((END_TIME - START_TIME))
+ELAPSED=$((END_TIME - START_TIME))
 
-echo "All files processed successfully"
-echo "Total time taken: ${TOTAL_ELAPSED} seconds"
+echo "Downsampled to ${COVERAGE}x: ${ELAPSED} seconds"
+echo "Output: ${OUTPUT_FILE}"
