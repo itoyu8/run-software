@@ -79,6 +79,7 @@ echo "VCF file: $VCF_FILE"
 echo "Tumor FASTQ: $TUMOR_FASTQ"
 echo "Normal FASTQ: $NORMAL_FASTQ"
 echo "Reference: $REFERENCE_FASTA"
+echo "Genome: $REFERENCE_TYPE"
 echo "Threads: $THREADS"
 
 # Create log directory
@@ -88,6 +89,7 @@ mkdir -p log
 singularity exec --bind /home/itoyu8/:/home/itoyu8/ "$CONTAINER" \
   /workspace/rscarpia/target/release/pipeline \
   --reference "$REFERENCE_FASTA" \
+  --genome "$REFERENCE_TYPE" \
   --vcf "$VCF_FILE" \
   --tumor "$TUMOR_FASTQ" \
   --normal "$NORMAL_FASTQ"

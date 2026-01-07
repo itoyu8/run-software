@@ -9,10 +9,7 @@
 # Usage: sbatch verkko_porec.sh --hifi <hifi.fastq.gz> --nano <ont.fastq.gz> --porec <porec.fastq.gz> -d <output_dir>
 # !!CAUTION!! use -d ~/absolute_path/verkko_output
 
-set -e
-
-# Start time
-START_TIME=$(date +%s)
+set -euxo pipefail
 
 # Parse arguments
 HIFI=""
@@ -57,7 +54,7 @@ fi
 CONTAINER="/home/itoyu8/singularity/verkko-v2.2.1.sif"
 
 # Run Verkko
-singularity exec \
+time singularity exec \
     --bind /home/itoyu8/:/home/itoyu8/ \
     --bind /lustre1:/lustre1/ \
     "$CONTAINER" verkko \
@@ -67,11 +64,4 @@ singularity exec \
     --porec "$POREC" \
     --screen-human-contaminants
 
-# End time and calculate duration
-END_TIME=$(date +%s)
-ELAPSED=$((END_TIME - START_TIME))
-HOURS=$((ELAPSED / 3600))
-MINUTES=$(((ELAPSED % 3600) / 60))
-SECONDS=$((ELAPSED % 60))
-
-printf "Verkko assembly completed in %02d:%02d:%02d\n" $HOURS $MINUTES $SECONDS
+echo "Exit status: $?"

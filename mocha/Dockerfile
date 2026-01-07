@@ -19,6 +19,10 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     openjdk-11-jre-headless \
     r-base \
+    r-cran-optparse \
+    r-cran-ggplot2 \
+    r-cran-data.table \
+    r-cran-scales \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

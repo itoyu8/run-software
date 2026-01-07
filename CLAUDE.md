@@ -94,10 +94,56 @@ Always use SBATCH directives in the shebang:
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=4G
 #SBATCH -c 32
+
+set -euxo pipefail
 ```
+
+## Shell Options (TODO: Apply to all scripts)
+All scripts should include `set -euxo pipefail` after SBATCH directives:
+- `-e`: Exit on error
+- `-u`: Error on undefined variables
+- `-x`: Print commands (for debugging which sample failed)
+- `-o pipefail`: Catch errors in pipes
+
+Note: These options are NOT inherited by child scripts when using `bash script.sh`. Each script needs its own `set` line.
+
+## Exit Status
+Always print the exit status at the end of scripts for error log identification:
+```bash
+echo "Exit status: $?"
+```
+
+This helps identify failed jobs when reviewing logs. With `set -e`, if a command fails the script exits immediately, so reaching this line indicates success (exit status 0).
+
+## Echo Statements
+With `set -x` enabled, all commands are printed with expanded variables before execution. Therefore, explicit `echo` statements for debugging or showing variable values are unnecessary and should be avoided. Only use `echo` for:
+- Error messages before `exit 1`
+- Usage information
+- Exit status at the end of scripts
+
+## Time Measurement
+Use the `time` command to measure execution time instead of manual `START_TIME`/`END_TIME` calculations:
+```bash
+# Good - use time command
+time "${TOOL}" args > output.log 2>&1
+
+# Bad - manual time calculation (deprecated)
+START_TIME=$(date +%s)
+"${TOOL}" args
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+```
+
+The `time` command outputs:
+- `real`: Wall clock time (actual elapsed time)
+- `user`: CPU time in user mode (sum across all threads)
+- `sys`: CPU time in kernel mode
+
+For multi-threaded tools, `user` time will be greater than `real` time, which indicates parallel efficiency.
 
 ## Usage Documentation
 - Use `# Usage:` comment at line 8 instead of extensive error handling
+- Use `# Output:` comment at line 9 to document output files
 - Keep usage examples concise and clear
 - Example: `# Usage: ./script.sh [--reference hg38|chm13] <input_file>`
 
@@ -132,6 +178,8 @@ THREADS=${SLURM_CPUS_PER_TASK:-32}
 - BWA: `/home/itoyu8/bin/bwa/bwa-0.7.19/bwa`
 - Samtools: `/home/itoyu8/bin/samtools/samtools-1.19/samtools`
 - Minimap2: `/home/itoyu8/bin/minimap2/minimap2-2.28/minimap2`
+- Yak: `/home/itoyu8/bin/yak/yak-0.1/yak`
+- k8 (for paftools.js): `/home/itoyu8/bin/minimap2/k8-0.2.5/k8-Linux`
 
 ### Container Usage
 Only use containers when direct binaries are not available:
@@ -167,40 +215,40 @@ done
 
 ## File Output
 
-### CRITICAL: Output Directory Handling
-**When a script accepts an output path parameter (e.g., `-o`, `-d`), treat it as a DIRECTORY, not a file prefix.**
-
-Common mistake pattern to AVOID:
+### Output Path Convention (TODO: Standardize across all scripts)
+Use `-d` for output directory and `-o` for output name/prefix:
 ```bash
-# WRONG - This places files in parent directory
-OUTPUT_DIR=$(dirname "${OUTPUT_PREFIX}")
-mkdir -p "${OUTPUT_DIR}"
-command -o "${OUTPUT_PREFIX}" ...  # Files end up scattered in parent directory
+# Usage pattern
+script.sh -d /output/dir -o sample_name input.bam
+# → /output/dir/sample_name.vcf.gz
+
+# -o has a default, so -d alone works
+script.sh -d /output/dir input.bam
+# → /output/dir/output.vcf.gz (default name)
 ```
 
-Correct pattern:
+Implementation pattern:
 ```bash
-# CORRECT - Treat output parameter as directory
-OUTPUT_DIR="${OUTPUT_PREFIX}"  # The parameter IS the directory
+OUTPUT_DIR="."
+OUTPUT_NAME="output"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -d) OUTPUT_DIR="$2"; shift 2 ;;
+        -o) OUTPUT_NAME="$2"; shift 2 ;;
+        *)  INPUT_FILE="$1"; shift ;;
+    esac
+done
+
 mkdir -p "${OUTPUT_DIR}"
-OUTPUT_BASE=$(basename "${OUTPUT_PREFIX}")
-command -o "${OUTPUT_DIR}/${OUTPUT_BASE}" ...  # All files inside the directory
+OUTPUT_DIR=$(realpath "${OUTPUT_DIR}")
+# → Use ${OUTPUT_DIR}/${OUTPUT_NAME}.ext for outputs
 ```
 
-**Examples of tools following this pattern:**
-- **hifiasm**: `-o ~/path/output_name` → All files in `output_name/` directory
-- **dipcall**: `-o ~/path/output_name` → All files in `output_name/` directory
-- **verkko**: `-d ~/path/output_dir` → All files in `output_dir/` directory
-
-**Why this matters:**
-- Users expect `-o sample1` to create `sample1/` containing all outputs
-- The alternative (files scattered in parent directory) causes organization issues
-- Consistent with assembly tool conventions (hifiasm, verkko, etc.)
-
-### Legacy Pattern (for alignment scripts only)
-- Place output files in same directory as input files
-- Use `$(dirname "$INPUT_FILE")` to get input directory
-- Use `$(basename "$INPUT_FILE" .ext)` to get base name without extension
+### Current issues (TODO)
+1. Some scripts use realpath, others don't → Standardize to always use realpath
+2. Output directory not auto-created → Always `mkdir -p`
+3. Mix of output dir vs output filename → Migrate to `-d` / `-o` pattern above
 
 ## Memory and CPU Settings
 Standard SBATCH settings:
