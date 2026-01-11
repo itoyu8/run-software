@@ -10,10 +10,8 @@
 
 set -euxo pipefail
 
-# Tool paths
-GFATOOLS="/home/itoyu8/bin/gfatools/gfatools/gfatools"
-SEQKIT="/home/itoyu8/bin/seqkit/seqkit"
-MINIMAP2="/home/itoyu8/bin/minimap2/minimap2-2.28/minimap2"
+# Container
+LH3_TOOLS_SIF="/home/itoyu8/singularity/lh3-tools_0.1.0.sif"
 THREADS=${SLURM_CPUS_PER_TASK:-16}
 
 # Parse arguments
@@ -89,13 +87,16 @@ PAF_FILE="${OUTPUT_DIR}/${BASENAME}.paf"
 
 # Step 1: Convert GFA to FASTA (skip if input is already FASTA)
 if [ "$IS_GFA" = true ]; then
-    time "${GFATOOLS}" gfa2fa "${INPUT_FILE}" > "${FA_FILE}"
+    time singularity exec --bind /home/itoyu8/:/home/itoyu8/,/lustre1/:/lustre1/ \
+        "${LH3_TOOLS_SIF}" gfatools gfa2fa "${INPUT_FILE}" > "${FA_FILE}"
 fi
 
 # Step 2: Calculate assembly statistics
-time "${SEQKIT}" stats -a "${FA_FILE}" > "${STATS_FILE}"
+time singularity exec --bind /home/itoyu8/:/home/itoyu8/,/lustre1/:/lustre1/ \
+    "${LH3_TOOLS_SIF}" seqkit stats -a "${FA_FILE}" > "${STATS_FILE}"
 
 # Step 3: Align to reference
-time "${MINIMAP2}" -x asm5 -t "${THREADS}" "${REFERENCE_PATH}" "${FA_FILE}" > "${PAF_FILE}"
+time singularity exec --bind /home/itoyu8/:/home/itoyu8/,/lustre1/:/lustre1/ \
+    "${LH3_TOOLS_SIF}" minimap2 -x asm5 -t "${THREADS}" "${REFERENCE_PATH}" "${FA_FILE}" > "${PAF_FILE}"
 
 echo "Exit status: $?"

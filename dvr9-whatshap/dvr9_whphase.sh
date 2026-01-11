@@ -1,17 +1,16 @@
 #!/bin/bash
 #SBATCH -p rjobs,mjobs
-#SBATCH -J dv_whphase
+#SBATCH -J dvr9_whphase
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=8G
 #SBATCH -c 16
-# Usage: ./dv_whphase.sh --type <ont|hifi> [--reference hg38|chm13] [--strict-filter] [-d output_dir] [-o output_name] <input.bam>
+# Usage: ./dvr9_whphase.sh [--reference hg38|chm13] [--strict-filter] [-d output_dir] [-o output_name] <input.bam>
 # Output: <output_dir>/<output_name>.dv.vcf.gz, <output_dir>/<output_name>.phased.vcf.gz
 
 set -euxo pipefail
 
 # Parse arguments
-SEQ_TYPE=""
 INPUT_BAM=""
 OUTPUT_DIR="."
 OUTPUT_NAME="output"
@@ -20,15 +19,6 @@ STRICT_FILTER=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --type)
-            if [ "$2" = "ont" ] || [ "$2" = "hifi" ]; then
-                SEQ_TYPE="$2"
-            else
-                echo "Error: --type must be 'ont' or 'hifi'"
-                exit 1
-            fi
-            shift 2
-            ;;
         --reference)
             if [ "$2" = "chm13" ]; then
                 REFERENCE_TYPE="chm13"
@@ -68,8 +58,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$SEQ_TYPE" ] || [ -z "$INPUT_BAM" ]; then
-    echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] [--strict-filter] [-d output_dir] [-o output_name] <input.bam>"
+if [ -z "$INPUT_BAM" ]; then
+    echo "Usage: $0 [--reference hg38|chm13] [--strict-filter] [-d output_dir] [-o output_name] <input.bam>"
     exit 1
 fi
 
@@ -79,65 +69,39 @@ OUTPUT_DIR=$(realpath "${OUTPUT_DIR}")
 
 THREADS=${SLURM_CPUS_PER_TASK:-16}
 
-if [ "$SEQ_TYPE" = "ont" ]; then
-    DV_MODEL="ONT_R104"
-elif [ "$SEQ_TYPE" = "hifi" ]; then
-    DV_MODEL="PACBIO"
-fi
-
 if [ "$REFERENCE_TYPE" = "chm13" ]; then
     REFERENCE_GENOME_PATH="/home/itoyu8/database/reference/chm13/v2.0/chm13v2.0_maskedY_rCRS.fa"
 else
     REFERENCE_GENOME_PATH="/home/itoyu8/database/reference/hg38/GRCh38.d1.vd1/GRCh38.d1.vd1.fa"
 fi
 
-DV_WHATSHAP_SIF="/home/itoyu8/singularity/dv-whatshap_0.1.0.sif"
+DVR9_WHATSHAP_SIF="/home/itoyu8/singularity/dvr9-whatshap_0.1.0.sif"
 BCFTOOLS="/home/itoyu8/bin/bcftools/bcftools-1.19/bcftools"
 
-# [ARCHIVED] gnomAD VCF for filtering (currently unused):
-# GNOMAD_VCF="/home/itoyu8/database/reference/gnomAD_4.1/gnomad.genomes.v4.1.sites.merged.light.vcf.bgz"
-
+DV_TEMP_DIR="${OUTPUT_DIR}/${OUTPUT_NAME}_dv_intermediate"
 DV_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}.dv.vcf.gz"
 FILTERED_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}.dv.filtered.vcf.gz"
 PHASED_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}.phased.vcf.gz"
 
-DV_TEMP_DIR="${OUTPUT_DIR}/${OUTPUT_NAME}_dv_intermediate"
 mkdir -p "${DV_TEMP_DIR}"
 mkdir -p ./log
 
-# Step 1: Run DeepVariant
-time singularity exec --nv \
+# Step 1: Run PEPPER-Margin-DeepVariant
+time singularity exec \
     --bind /home/itoyu8/:/home/itoyu8/ \
     --bind /lustre1:/lustre1/ \
-    --bind "${DV_TEMP_DIR}:/tmp" \
-    --env TMPDIR=/tmp \
-    "${DV_WHATSHAP_SIF}" run_deepvariant \
-    --model_type "${DV_MODEL}" \
-    --ref "${REFERENCE_GENOME_PATH}" \
-    --reads "${INPUT_BAM}" \
-    --output_vcf "${DV_OUTPUT}" \
-    --intermediate_results_dir "${DV_TEMP_DIR}" \
-    --num_shards "${THREADS}"
+    "${DVR9_WHATSHAP_SIF}" run_pepper_margin_deepvariant call_variant \
+    -b "${INPUT_BAM}" \
+    -f "${REFERENCE_GENOME_PATH}" \
+    -o "${DV_TEMP_DIR}" \
+    -t "${THREADS}" \
+    --ont_r9_guppy5_sup
+
+# Move output VCF to expected location
+mv "${DV_TEMP_DIR}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz" "${DV_OUTPUT}"
+mv "${DV_TEMP_DIR}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz.tbi" "${DV_OUTPUT}.tbi"
 
 # Step 2: Optional strict filter
-#
-# [ARCHIVED] gnomAD filtering commands - can be restored if needed:
-# ----------------------------------------------------------------
-# # Filter for known SNPs only (hg38):
-# "${BCFTOOLS}" isec -n=2 -w2 -c snps -O z -o "${UNPHASED_OUTPUT}" "${GNOMAD_VCF}" "${DV_OUTPUT}"
-#
-# # Filter for known variants including indels (hg38):
-# "${BCFTOOLS}" isec -n=2 -w2 -O z -o "${UNPHASED_OUTPUT}" "${GNOMAD_VCF}" "${DV_OUTPUT}"
-#
-# # gnomAD + GQ + VAF filter (hg38):
-# GNOMAD_TEMP="${OUTPUT_DIR}/temp_gnomad.vcf.gz"
-# "${BCFTOOLS}" isec -n=2 -w2 -O z -o "${GNOMAD_TEMP}" "${GNOMAD_VCF}" "${DV_OUTPUT}"
-# tabix -p vcf "${GNOMAD_TEMP}"
-# "${BCFTOOLS}" view -f PASS -m2 -M2 --genotype het "${GNOMAD_TEMP}" | \
-# "${BCFTOOLS}" filter -i "FORMAT/GQ >= 20 && FORMAT/VAF >= 0.3 && FORMAT/VAF <= 0.7" -O z -o "${FILTERED_OUTPUT}"
-# rm -f "${GNOMAD_TEMP}" "${GNOMAD_TEMP}.tbi"
-# ----------------------------------------------------------------
-
 WHATSHAP_INPUT="${DV_OUTPUT}"
 
 if [ "$STRICT_FILTER" = true ]; then
@@ -158,11 +122,11 @@ if [ "$STRICT_FILTER" = true ]; then
     WHATSHAP_INPUT="${FILTERED_OUTPUT}"
 fi
 
-# Step 3: Run WhatsHap
-time singularity exec --nv \
+# Step 3: Run WhatsHap for additional phasing
+time singularity exec \
     --bind /home/itoyu8/:/home/itoyu8/ \
     --bind /lustre1:/lustre1/ \
-    "${DV_WHATSHAP_SIF}" whatshap phase \
+    "${DVR9_WHATSHAP_SIF}" whatshap phase \
     --reference "${REFERENCE_GENOME_PATH}" \
     --ignore-read-groups \
     --distrust-genotypes \

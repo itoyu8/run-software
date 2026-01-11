@@ -87,6 +87,9 @@ fi
 
 CONTAINER_PATH="/home/itoyu8/singularity/deepsomatic_0.1.0.sif"
 
+DS_TEMP_DIR="${OUTPUT_DIR}/deepsomatic_intermediate"
+mkdir -p "${DS_TEMP_DIR}"
+
 BIND_PATHS="${OUTPUT_DIR}:${OUTPUT_DIR}"
 BIND_PATHS="${BIND_PATHS},$(dirname "${TUMOR_BAM}"):$(dirname "${TUMOR_BAM}")"
 BIND_PATHS="${BIND_PATHS},$(dirname "${NORMAL_BAM}"):$(dirname "${NORMAL_BAM}")"
@@ -94,6 +97,8 @@ BIND_PATHS="${BIND_PATHS},$(dirname "${REFERENCE_GENOME_PATH}"):$(dirname "${REF
 
 time singularity exec \
     --bind "${BIND_PATHS}" \
+    --bind "${DS_TEMP_DIR}:/tmp" \
+    --env TMPDIR=/tmp \
     "${CONTAINER_PATH}" \
     run_deepsomatic \
     --model_type="${MODEL_TYPE}" \

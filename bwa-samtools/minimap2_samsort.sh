@@ -5,16 +5,16 @@
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=4G
 #SBATCH -c 16
+# Usage: ./minimap2_samsort.sh --type <ont|hifi> [--reference hg38|chm13] [-d output_dir] [-o output_name] <input_fastq>
+# Output: <output_dir>/<output_name>.bam, <output_dir>/<output_name>.bam.bai
 
-# Usage: ./minimap2_samsort.sh --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>
-
-# Start time
-START_TIME=$(date +%s)
+set -euxo pipefail
 
 # Parse arguments
 SEQ_TYPE=""
 INPUT_FASTQ=""
-OUTPUT_BASE_NAME=""
+OUTPUT_DIR="."
+OUTPUT_NAME="output"
 REFERENCE_TYPE="hg38"
 
 while [[ $# -gt 0 ]]; do
@@ -24,7 +24,6 @@ while [[ $# -gt 0 ]]; do
                 SEQ_TYPE="$2"
             else
                 echo "Error: --type must be either 'ont' or 'hifi'"
-                echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>"
                 exit 1
             fi
             shift 2
@@ -36,24 +35,27 @@ while [[ $# -gt 0 ]]; do
                 REFERENCE_TYPE="hg38"
             else
                 echo "Error: --reference must be either 'hg38' or 'chm13'"
-                echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>"
                 exit 1
             fi
             shift 2
             ;;
+        -d)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -o)
+            OUTPUT_NAME="$2"
+            shift 2
+            ;;
         -*)
             echo "Unknown option $1"
-            echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>"
             exit 1
             ;;
         *)
             if [ -z "$INPUT_FASTQ" ]; then
                 INPUT_FASTQ="$1"
-            elif [ -z "$OUTPUT_BASE_NAME" ]; then
-                OUTPUT_BASE_NAME="$1"
             else
                 echo "Too many arguments"
-                echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>"
                 exit 1
             fi
             shift
@@ -61,18 +63,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$SEQ_TYPE" ] || [ -z "$INPUT_FASTQ" ] || [ -z "$OUTPUT_BASE_NAME" ]; then
-    echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] <input_fastq> <output_base_name>"
+if [ -z "$SEQ_TYPE" ] || [ -z "$INPUT_FASTQ" ]; then
+    echo "Usage: $0 --type <ont|hifi> [--reference hg38|chm13] [-d output_dir] [-o output_name] <input_fastq>"
     exit 1
 fi
-THREADS=${SLURM_CPUS_PER_TASK:-16}
 
-INPUT_DIR=$(dirname "$INPUT_FASTQ")
+mkdir -p "${OUTPUT_DIR}"
+OUTPUT_DIR=$(realpath "${OUTPUT_DIR}")
+
+THREADS=${SLURM_CPUS_PER_TASK:-16}
 
 if [ "$SEQ_TYPE" = "ont" ]; then
     MINIMAP2_PRESET="-ax map-ont"
 elif [ "$SEQ_TYPE" = "hifi" ]; then
-    MINIMAP2_PRESET="-ax map-pb"
+    MINIMAP2_PRESET="-ax map-hifi"
 fi
 
 if [ "$REFERENCE_TYPE" = "chm13" ]; then
@@ -82,54 +86,26 @@ else
 fi
 
 REFERENCE_DIR=$(dirname "${REFERENCE_GENOME_PATH}")
-REFERENCE_BASENAME=$(basename "${REFERENCE_GENOME_PATH}" .fasta)
+REFERENCE_BASENAME=$(basename "${REFERENCE_GENOME_PATH}" .fa)
 REFERENCE_MMI_PATH="${REFERENCE_DIR}/${REFERENCE_BASENAME}.mmi"
 
-TEMP_BAM_FILE="${INPUT_DIR}/${OUTPUT_BASE_NAME}.temp.bam"
-FINAL_BAM_FILE="${INPUT_DIR}/${OUTPUT_BASE_NAME}.bam"
-FINAL_BAM_INDEX="${INPUT_DIR}/${OUTPUT_BASE_NAME}.bam.bai"
+TEMP_BAM_FILE="${OUTPUT_DIR}/${OUTPUT_NAME}.temp.bam"
+FINAL_BAM_FILE="${OUTPUT_DIR}/${OUTPUT_NAME}.bam"
+FINAL_BAM_INDEX="${OUTPUT_DIR}/${OUTPUT_NAME}.bam.bai"
 
 mkdir -p ./log
 
 if [ ! -f "${REFERENCE_MMI_PATH}" ]; then
-    /home/itoyu8/bin/minimap2/minimap2-2.28/minimap2 -t "${THREADS}" -d "${REFERENCE_MMI_PATH}" "${REFERENCE_GENOME_PATH}" \
-        || { echo "ERROR: Reference genome indexing failed."; exit 1; }
+    /home/itoyu8/bin/minimap2/minimap2-2.28/minimap2 -t "${THREADS}" -d "${REFERENCE_MMI_PATH}" "${REFERENCE_GENOME_PATH}"
 fi
 
-echo "Starting minimap2 alignment and BAM conversion..."
-ALIGN_START=$(date +%s)
+time /home/itoyu8/bin/minimap2/minimap2-2.28/minimap2 ${MINIMAP2_PRESET} -t ${THREADS} "${REFERENCE_MMI_PATH}" "${INPUT_FASTQ}" | \
+    /home/itoyu8/bin/samtools/samtools-1.19/samtools view -bh -@ ${THREADS} - > "${TEMP_BAM_FILE}"
 
-/home/itoyu8/bin/minimap2/minimap2-2.28/minimap2 ${MINIMAP2_PRESET} -t ${THREADS} "${REFERENCE_MMI_PATH}" "${INPUT_FASTQ}" | \
-/home/itoyu8/bin/samtools/samtools-1.19/samtools view -bh -@ ${THREADS} - \
-    > "${TEMP_BAM_FILE}" \
-    || { echo "ERROR: Alignment and BAM conversion failed."; exit 1; }
+time /home/itoyu8/bin/samtools/samtools-1.19/samtools sort -@ "${THREADS}" -o "${FINAL_BAM_FILE}" "${TEMP_BAM_FILE}"
 
-ALIGN_END=$(date +%s)
-ALIGN_ELAPSED=$((ALIGN_END - ALIGN_START))
-echo "Minimap2 alignment and BAM conversion completed in ${ALIGN_ELAPSED} seconds"
-
-echo "Starting BAM sorting and indexing..."
-SORT_START=$(date +%s)
-
-/home/itoyu8/bin/samtools/samtools-1.19/samtools sort -@ "${THREADS}" -o "${FINAL_BAM_FILE}" "${TEMP_BAM_FILE}" \
-    || { echo "ERROR: BAM sorting failed."; exit 1; }
-
-/home/itoyu8/bin/samtools/samtools-1.19/samtools index "${FINAL_BAM_FILE}" "${FINAL_BAM_INDEX}" \
-    || { echo "ERROR: BAM indexing failed."; exit 1; }
-
-SORT_END=$(date +%s)
-SORT_ELAPSED=$((SORT_END - SORT_START))
-echo "BAM sorting and indexing completed in ${SORT_ELAPSED} seconds"
+/home/itoyu8/bin/samtools/samtools-1.19/samtools index "${FINAL_BAM_FILE}" "${FINAL_BAM_INDEX}"
 
 rm -f "${TEMP_BAM_FILE}"
 
-# End time
-END_TIME=$(date +%s)
-TOTAL_ELAPSED=$((END_TIME - START_TIME))
-
-echo ""
-echo "=== Processing Summary ==="
-echo "Minimap2 alignment + BAM conversion: ${ALIGN_ELAPSED} seconds"
-echo "BAM sorting + indexing: ${SORT_ELAPSED} seconds"
-echo "Total time: ${TOTAL_ELAPSED} seconds"
-echo "Output: ${FINAL_BAM_FILE}"
+echo "Exit status: $?"
