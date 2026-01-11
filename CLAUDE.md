@@ -8,15 +8,42 @@ This is a bioinformatics pipeline repository containing SLURM job scripts for ge
 
 ## Directory Structure
 
-- **bwa-samtools/**: Short-read and long-read alignment pipelines using BWA/Minimap2 and Samtools processing
+### Alignment & BAM Processing
+- **bwa-samtools/**: Short-read (BWA) and long-read (Minimap2) alignment, BAM downsampling, stats
+- **bam_refiner/**: BAM refinement pipelines
+
+### Variant Calling
+- **dv-whatshap/**: DeepVariant + WhatsHap phasing pipeline (germline)
+- **dvr9-whatshap/**: DeepVariant R9 + WhatsHap phasing pipeline
+- **clairs/**: ClairS somatic variant calling (tumor/normal pairs)
+- **deepsomatic/**: DeepSomatic somatic variant calling (tumor/normal pairs)
+- **svcaller/**: Structural variant calling (Severus, nanomonsv)
+
+### Imputation
 - **glimpse1/**, **glimpse2/**: Genotype imputation using GLIMPSE (versions 1 and 2)
 - **quilt/**: Genotype imputation using QUILT2
-- **rasusa/**: FASTQ downsampling using Rasusa
-- **seqtk/**: FASTQ downsampling using seqtk
-- **dv-whatshap/**: DeepVariant and WhatsHap phasing pipelines
-- **svcaller/**: Structural variant calling (Severus, nanomonsv)
-- **gatk/**: GATK utility scripts
+- **beagle/**: Phasing using Beagle
+
+### Assembly & Phasing
+- **hifiasm/**: Genome assembly using hifiasm (trio, ONT-only modes)
+- **verkko-rukki/**: Verkko assembly and Rukki phasing
+- **dipcall/**: Diploid genome comparison using dipcall
+- **switch_error/**: Switch error evaluation using yak
+
+### Downsampling
+- **rasusa/**: Coverage-based FASTQ downsampling (Rasusa)
+- **seqtk/**: Fraction-based FASTQ downsampling (seqtk)
+
+### Utilities & Annotation
+- **gatk/**: GATK utility scripts (createdict, genotype_filter)
+- **mocha/**: MoChA for mosaic chromosomal alteration detection
+- **annotate_genome/**: Gap region creation for hg38/chm13
+- **process_snp/**: SNP processing utilities
+- **util/**: General utilities (FASTQ QC counter)
+
+### Other
 - **temp/**: Work-in-progress or experimental scripts
+- **data/**: Reference data files
 
 ## Key Workflow Patterns
 
@@ -46,6 +73,32 @@ sbatch run_quilt.sh /path/to/sample.bam [output_name]
 - **Long-reads**: `minimap2_samsort.sh` supports ONT and HiFi with `--type` parameter
 - Both scripts output BAM, BAI, and optionally metrics files in the same directory as input
 
+### Variant Calling Workflows
+
+**Germline variant calling + phasing (DeepVariant + WhatsHap):**
+```bash
+# Step 1: Variant calling and phasing
+sbatch dv-whatshap/dv_whphase.sh --type ont -d /output/dir -o sample_name /path/to/sample.bam
+# → sample_name.dv.vcf.gz, sample_name.phased.vcf.gz
+
+# Step 2: Haplotagging and BAM splitting
+sbatch dv-whatshap/whtag_split.sh -d /output/dir sample_name.phased.vcf.gz sample_name.bam
+# → sample_name.hptag.bam, sample_name.h1.bam, sample_name.h2.bam
+```
+
+**Somatic variant calling (tumor/normal pairs):**
+```bash
+# ClairS (with optional pre-phased VCF)
+bash clairs/clairs.sh -d /output/dir tumor.bam normal.bam
+bash clairs/clairs.sh -d /output/dir --normal-vcf germline.vcf.gz --haplotagged tumor_hptag.bam normal.bam
+
+# DeepSomatic
+bash deepsomatic/deepsomatic.sh -d /output/dir --platform ont tumor.bam normal.bam
+
+# Severus (structural variants)
+./svcaller/severus/severus.sh --tumor tumor.bam --normal normal.bam --phased-vcf phased.vcf --out-dir /output/dir
+```
+
 ### Container Usage Strategy
 - **Prefer direct binaries** when available (BWA, Samtools, Minimap2, BCFtools)
 - **Use Singularity containers** for tools without local binaries (GLIMPSE, QUILT, GATK)
@@ -69,6 +122,11 @@ Most scripts accept `--reference hg38|chm13` to switch between GRCh38 and CHM13 
 ## Singularity Container Locations
 
 Key containers used in scripts:
+- DeepVariant+WhatsHap: `/home/itoyu8/singularity/dv-whatshap_0.1.0.sif`
+- DeepVariant 1.9: `/home/itoyu8/singularity/deepvariant_1.9.0.sif`
+- ClairS: `/home/itoyu8/singularity/clairs_0.1.0.sif`
+- DeepSomatic: `/home/itoyu8/singularity/deepsomatic_0.1.0.sif`
+- Severus: `/home/itoyu8/singularity/severus_0.1.0.sif`
 - GLIMPSE2: `/home/itoyu8/singularity/glimpse_v2.0.0-27-g0919952_20221207.sif`
 - QUILT: `/home/itoyu8/singularity/quilt_v0.1.0.sif`
 - GATK: `/home/itoyu8/singularity/compat_parabricks-0.2.2.sif`

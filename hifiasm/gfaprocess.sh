@@ -55,8 +55,8 @@ else
 fi
 
 # Set up output directory
-OUTPUT_DIR=$(realpath "${OUTPUT_DIR}")
 mkdir -p "${OUTPUT_DIR}"
+OUTPUT_DIR=$(realpath "${OUTPUT_DIR}")
 
 # Determine input type and set basename/FA_FILE accordingly
 case "${INPUT_FILE}" in

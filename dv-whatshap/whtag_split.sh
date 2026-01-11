@@ -94,9 +94,8 @@ HAPLOTAG_TSV="${OUTPUT_DIR}/${FILE_BASENAME}.haplotype.tsv.gz"
 H1_BAM="${OUTPUT_DIR}/${FILE_BASENAME}.h1.bam"
 H2_BAM="${OUTPUT_DIR}/${FILE_BASENAME}.h2.bam"
 
-if [ ! -f "${PHASED_VCF}.tbi" ]; then
-    tabix -p vcf "${PHASED_VCF}"
-fi
+# Always recreate index to avoid stale .tbi issues
+tabix -f -p vcf "${PHASED_VCF}"
 
 # Step 0: Convert CRAM to BAM if input is CRAM
 if [ "$FILE_EXT" = "cram" ]; then
