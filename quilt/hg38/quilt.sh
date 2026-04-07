@@ -16,8 +16,8 @@ OUTPUT_FOLDER_NAME=${2:-"quilt_output"}
 # Set up directories
 BAM_DIR=$(dirname "$BAM")
 OUTPUT_BASE="${BAM_DIR}/${OUTPUT_FOLDER_NAME}"
-PREPARED_REFERENCE_DIR="/home/itoyu8/database/tools/quilt/output/RData"
-CHUNK_DIR="/home/itoyu8/database/tools/quilt/chunk_output"
+PREPARED_REFERENCE_DIR="/home/itoyu8/database/tools/quilt/hg38/prepared_reference"
+CHUNK_DIR="/home/itoyu8/database/tools/quilt/hg38/chunk_output"
 BCFTOOLS="/home/itoyu8/bin/bcftools/bcftools-1.22/bcftools"
 
 # Parameters

@@ -1,10 +1,11 @@
 #!/bin/bash
-#SBATCH -p rjobs
+#SBATCH -p gpu_no_parabricks
 #SBATCH -J hifiasm_trio_yak
 #SBATCH -o ./log/%x.o%j
 #SBATCH -e ./log/%x.e%j
-#SBATCH --mem-per-cpu=7G
+#SBATCH --mem-per-cpu=8G
 #SBATCH -c 56
+#SBATCH --gres=gpu:1
 # Usage: sbatch hifiasm_trio_yak.sh --ont <ont.fastq.gz> --h1 <h1.bam> --h2 <h2.bam> -d <output_dir> -o <basename> [--l 0|1|2|3] [--dual-scaf]
 # Output: <basename>.dip.hap1.p_ctg.gfa, <basename>.dip.hap2.p_ctg.gfa, <basename>.dip.p_utg.gfa
 

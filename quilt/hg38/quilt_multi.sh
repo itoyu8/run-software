@@ -5,7 +5,7 @@
 #SBATCH -e ./log/%x.e%j
 #SBATCH --mem-per-cpu=8G
 #SBATCH -c 16
-# Usage: sbatch quilt_multi.sh [-d output_dir] <input.bam>
+# Usage: sbatch quilt_multi.sh [--panel shapeit2|shapeit4|chm13] [-d output_dir] <input.bam>
 # Output: <output_dir>/quilt.phased.vcf.gz
 
 set -euxo pipefail
@@ -13,9 +13,14 @@ set -euxo pipefail
 # Parse arguments
 OUTPUT_DIR="."
 INPUT_BAM=""
+PANEL="shapeit2"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --panel)
+            PANEL="$2"
+            shift 2
+            ;;
         -d)
             OUTPUT_DIR="$2"
             shift 2
@@ -37,9 +42,33 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$INPUT_BAM" ]; then
-    echo "Usage: $0 [-d output_dir] <input.bam>"
+    echo "Usage: $0 [--panel shapeit2|shapeit4|chm13] [-d output_dir] <input.bam>"
     exit 1
 fi
+
+# Set paths based on panel selection
+case "$PANEL" in
+    shapeit2)
+        PREPARED_REFERENCE_DIR="/home/itoyu8/database/tools/quilt/hg38/prepared_reference"
+        CHUNK_DIR="/home/itoyu8/database/tools/quilt/hg38/chunk_output"
+        ;;
+    shapeit4)
+        PREPARED_REFERENCE_DIR="/home/itoyu8/database/tools/quilt/hg38/prepared_reference_shapeit4"
+        CHUNK_DIR="/home/itoyu8/database/tools/quilt/hg38/chunk_output"
+        ;;
+    chm13)
+        PREPARED_REFERENCE_DIR="/home/itoyu8/database/tools/quilt/chm13/prepared_reference"
+        CHUNK_DIR="/home/itoyu8/database/tools/quilt/chm13/chunk_output"
+        ;;
+    *)
+        echo "Error: --panel must be 'shapeit2', 'shapeit4', or 'chm13'"
+        exit 1
+        ;;
+esac
+
+echo "Panel: ${PANEL}"
+echo "Prepared reference: ${PREPARED_REFERENCE_DIR}"
+echo "Chunk dir: ${CHUNK_DIR}"
 
 INPUT_BAM=$(realpath "$INPUT_BAM")
 mkdir -p "${OUTPUT_DIR}"
@@ -48,8 +77,6 @@ OUTPUT_DIR=$(realpath "${OUTPUT_DIR}")
 THREADS=${SLURM_CPUS_PER_TASK:-16}
 
 CONTAINER="/home/itoyu8/singularity/quilt_v0.1.0.sif"
-PREPARED_REFERENCE_DIR="/home/itoyu8/database/tools/quilt/output/RData"
-CHUNK_DIR="/home/itoyu8/database/tools/quilt/chunk_output"
 BCFTOOLS="/home/itoyu8/bin/bcftools/bcftools-1.22/bcftools"
 
 NGEN=100

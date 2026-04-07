@@ -4,89 +4,53 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Repository Overview
 
-This is a bioinformatics pipeline repository containing SLURM job scripts for genomic analysis workflows. The repository is organized into tool-specific directories, each containing scripts for different stages of genomic data processing.
+Bioinformatics pipeline repository containing SLURM job scripts for genomic analysis workflows on HPC. Each tool-specific directory contains scripts for different stages of genomic data processing.
 
-## Directory Structure
+Coding standards (shebang, shell options, exit status, echo rules, time measurement, reference paths, thread definition, command paths, argument parsing, output conventions, SBATCH settings, Docker, SCP) are defined in the global CLAUDE.md and apply to all scripts here.
 
-### Alignment & BAM Processing
-- **bwa-samtools/**: Short-read (BWA) and long-read (Minimap2) alignment, BAM downsampling, stats
-- **bam_refiner/**: BAM refinement pipelines
+## Directory Organization
 
-### Variant Calling
-- **dv-whatshap/**: DeepVariant + WhatsHap phasing pipeline (germline)
-- **dvr9-whatshap/**: DeepVariant R9 + WhatsHap phasing pipeline
-- **clairs/**: ClairS somatic variant calling (tumor/normal pairs)
-- **deepsomatic/**: DeepSomatic somatic variant calling (tumor/normal pairs)
-- **svcaller/**: Structural variant calling (Severus, nanomonsv)
-
-### Imputation
-- **glimpse1/**, **glimpse2/**: Genotype imputation using GLIMPSE (versions 1 and 2)
-- **quilt/**: Genotype imputation using QUILT2
-- **beagle/**: Phasing using Beagle
-
-### Assembly & Phasing
-- **hifiasm/**: Genome assembly using hifiasm (trio, ONT-only modes)
-- **verkko-rukki/**: Verkko assembly and Rukki phasing
-- **dipcall/**: Diploid genome comparison using dipcall
-- **switch_error/**: Switch error evaluation using yak
-
-### Downsampling
-- **rasusa/**: Coverage-based FASTQ downsampling (Rasusa)
-- **seqtk/**: Fraction-based FASTQ downsampling (seqtk)
-
-### Utilities & Annotation
-- **gatk/**: GATK utility scripts (createdict, genotype_filter)
-- **mocha/**: MoChA for mosaic chromosomal alteration detection
-- **annotate_genome/**: Gap region creation for hg38/chm13
-- **process_snp/**: SNP processing utilities
-- **util/**: General utilities (FASTQ QC counter)
-
-### Other
-- **temp/**: Work-in-progress or experimental scripts
-- **data/**: Reference data files
+- **Alignment**: `bwa-samtools/` (BWA, Minimap2, samtools stats/downsample/bedcov), `bam_refiner/`
+- **Germline variant calling**: `dv-whatshap/` (DeepVariant + WhatsHap), `dvr9-whatshap/` (DV R9)
+- **Somatic variant calling**: `clairs/` (ClairS), `deepsomatic/` (DeepSomatic), `svcaller/` (Severus, nanomonsv), `wakhan/` (somatic CNA profiling)
+- **Imputation**: `glimpse1/`, `glimpse2/`, `quilt/hg38/`, `quilt/chm13/`, `beagle/`
+- **Assembly**: `hifiasm/`, `verkko-rukki/`, `dipcall/`, `switch_error/`
+- **Downsampling**: `rasusa/` (coverage-based), `seqtk/` (fraction-based)
+- **Utilities**: `gatk/`, `mocha/`, `annotate_genome/`, `process_snp/`, `util/`
 
 ## Key Workflow Patterns
 
-### Imputation Workflows
-Both GLIMPSE2 and QUILT follow a three-stage pattern:
-1. **Reference preparation**: Convert 1000 Genomes VCF to tool-specific format
-2. **Chunking**: Divide genome into manageable regions using genetic maps
-3. **Imputation**: Process BAM files per chromosome/chunk, then ligate/merge results
+### Alignment
 
-**GLIMPSE2 execution order:**
-```bash
-sbatch prepare_refpanel.sh  # One-time setup
-sbatch make_chunks.sh       # One-time setup
-sbatch split_reference.sh   # One-time setup
-sbatch run_glimpse2.sh /path/to/sample.bam [output_name]
-```
+- **Short-reads**: `bwa-samtools/bwa_samsort.sh` (BWA align -> samtools sort -> GATK MarkDuplicates)
+- **Long-reads**: `bwa-samtools/minimap2_samsort.sh` supports ONT and HiFi via `--type` parameter
 
-**QUILT execution order:**
-```bash
-sbatch create_chunks.sh       # One-time setup
-sbatch prepare_reference.sh   # One-time setup
-sbatch run_quilt.sh /path/to/sample.bam [output_name]
-```
+### Germline Variant Calling + Phasing (DeepVariant + WhatsHap)
 
-### Alignment Workflows
-- **Short-reads**: `bwa_samsort.sh` performs BWA alignment → Samtools sort → GATK MarkDuplicates
-- **Long-reads**: `minimap2_samsort.sh` supports ONT and HiFi with `--type` parameter
-- Both scripts output BAM, BAI, and optionally metrics files in the same directory as input
-
-### Variant Calling Workflows
-
-**Germline variant calling + phasing (DeepVariant + WhatsHap):**
 ```bash
 # Step 1: Variant calling and phasing
 sbatch dv-whatshap/dv_whphase.sh --type ont -d /output/dir -o sample_name /path/to/sample.bam
-# → sample_name.dv.vcf.gz, sample_name.phased.vcf.gz
+# -> sample_name.dv.vcf.gz, sample_name.phased.vcf.gz
 
 # Step 2: Haplotagging and BAM splitting
 sbatch dv-whatshap/whtag_split.sh -d /output/dir sample_name.phased.vcf.gz sample_name.bam
-# → sample_name.hptag.bam, sample_name.h1.bam, sample_name.h2.bam
+# -> sample_name.hptag.bam, sample_name.h1.bam, sample_name.h2.bam
 ```
 
-**Somatic variant calling (tumor/normal pairs):**
+### DeepVariant Rescue (CHM13 only)
+
+CHM13 telomere regions can cause DeepVariant "invalid allele index" crashes, losing data for the affected chromosome and subsequent chromosomes in the same shard. The rescue workflow (`dv-whatshap/dv_rescue.sh`) re-runs DeepVariant on affected regions and merges results. See `dv-whatshap/DV_RESCUE_GUIDE.md` for the full diagnostic and recovery procedure.
+
+```bash
+bash dv-whatshap/dv_rescue.sh \
+    --regions "chr17:30,chr18,chr21,chr22" \
+    --original-vcf <path>/normal.dv.vcf.gz \
+    --type ont --reference chm13 --strict-filter \
+    -d <path>/rescue <path>/normal.bam
+```
+
+### Somatic Variant Calling (tumor/normal pairs)
+
 ```bash
 # ClairS (with optional pre-phased VCF)
 bash clairs/clairs.sh -d /output/dir tumor.bam normal.bam
@@ -97,267 +61,81 @@ bash deepsomatic/deepsomatic.sh -d /output/dir --platform ont tumor.bam normal.b
 
 # Severus (structural variants)
 ./svcaller/severus/severus.sh --tumor tumor.bam --normal normal.bam --phased-vcf phased.vcf --out-dir /output/dir
+
+# Wakhan (somatic CNA profiling, with Severus breakpoints)
+sbatch wakhan/wakhan.sh -d /out -o sample --phased-vcf normal.phased.vcf.gz --breakpoints severus_somatic.vcf tumor.bam
+
+# Wakhan (standalone with change-point detection)
+sbatch wakhan/wakhan.sh -d /out -o sample --phased-vcf normal.phased.vcf.gz --cpd tumor.bam
 ```
 
-### Container Usage Strategy
-- **Prefer direct binaries** when available (BWA, Samtools, Minimap2, BCFtools)
-- **Use Singularity containers** for tools without local binaries (GLIMPSE, QUILT, GATK)
-- Container paths are hard-coded in scripts (e.g., `/home/itoyu8/singularity/glimpse_v2.0.0-27-g0919952_20221207.sif`)
+### Imputation Workflows
+
+GLIMPSE2 and QUILT both follow a three-stage pattern: reference preparation (one-time) -> chunking (one-time) -> per-sample imputation.
+
+**GLIMPSE2:**
+```bash
+sbatch glimpse2/prepare_refpanel.sh   # One-time
+sbatch glimpse2/make_chunks.sh        # One-time
+sbatch glimpse2/split_reference.sh    # One-time
+sbatch glimpse2/run_glimpse2.sh /path/to/sample.bam [output_name]
+```
+
+**QUILT2 (hg38)** - uses SHAPEIT2 phased 1KGP panel (3202 samples):
+```bash
+sbatch quilt/hg38/create_chunks.sh       # One-time
+sbatch quilt/hg38/prepare_reference.sh   # One-time
+sbatch quilt/hg38/quilt_multi.sh [-d output_dir] <input.bam>
+```
+
+**QUILT2 (chm13)** - uses SHAPEIT5 phased 1KGP panel (2504 unrelated) with T2T-native genetic maps:
+```bash
+bash quilt/chm13/download_2504_bcf.sh                   # Mac (HPC has no internet)
+sbatch quilt/chm13/create_chunks.sh                      # One-time
+sbatch quilt/chm13/split_bcf.sh                          # One-time
+for i in {1..22}; do sbatch quilt/chm13/prepare_reference.sh chr$i; done  # One-time, parallel
+```
+
+### Assembly (hifiasm)
+
+```bash
+# Trio mode with yak DBs
+sbatch hifiasm/hifiasm_trio_yak.sh --paternal pat.yak --maternal mat.yak -d /out hifi.fastq.gz
+
+# ONT-only mode
+sbatch hifiasm/hifiasm_ontonly.sh -d /out ont.fastq.gz
+
+# GFA -> FASTA post-processing
+bash hifiasm/gfaprocess.sh <assembly_prefix>
+```
+
+## Container Usage Strategy
+
+- **Prefer direct binaries** when available (BWA, Samtools, Minimap2, BCFtools, Yak)
+- **Use Singularity containers** for tools without local binaries:
+  - DeepVariant+WhatsHap: `dv-whatshap_0.1.0.sif`
+  - ClairS: `clairs_0.1.0.sif`
+  - DeepSomatic: `deepsomatic_0.1.0.sif`
+  - Severus: `severus_0.1.0.sif`
+  - Wakhan: `wakhan_0.4.2.sif`
+  - GLIMPSE2: `glimpse_v2.0.0-27-g0919952_20221207.sif`
+  - QUILT: `quilt_v0.1.0.sif`
+  - GATK: `compat_parabricks-0.2.2.sif`
+  - Python3: `python3_0.1.0.sif`
+- All containers stored at `/home/itoyu8/singularity/`
 
 ## Common Script Parameters
 
-### Reference Genome Selection
-Most scripts accept `--reference hg38|chm13` to switch between GRCh38 and CHM13 reference genomes.
-
-### Output Conventions
-- Output files are placed in the **same directory as input files** by default
-- Many scripts accept an optional output name/folder parameter (e.g., `run_glimpse2.sh`, `run_quilt.sh`)
-- Output names can include subdirectories (e.g., `results/analysis_name`)
-
-### Downsampling Tools
-- **rasusa**: Coverage-based downsampling (specify target coverage like `--coverage 30`)
-- **seqtk**: Fraction-based downsampling (specify sampling rate like `-r 0.1`)
-- **samtools**: BAM downsampling via `sam_downsample.sh`
-
-## Singularity Container Locations
-
-Key containers used in scripts:
-- DeepVariant+WhatsHap: `/home/itoyu8/singularity/dv-whatshap_0.1.0.sif`
-- DeepVariant 1.9: `/home/itoyu8/singularity/deepvariant_1.9.0.sif`
-- ClairS: `/home/itoyu8/singularity/clairs_0.1.0.sif`
-- DeepSomatic: `/home/itoyu8/singularity/deepsomatic_0.1.0.sif`
-- Severus: `/home/itoyu8/singularity/severus_0.1.0.sif`
-- GLIMPSE2: `/home/itoyu8/singularity/glimpse_v2.0.0-27-g0919952_20221207.sif`
-- QUILT: `/home/itoyu8/singularity/quilt_v0.1.0.sif`
-- GATK: `/home/itoyu8/singularity/compat_parabricks-0.2.2.sif`
+- `--reference hg38|chm13` - switch reference genome (default: hg38)
+- `--type ont|hifi` - sequencing platform (for alignment and variant calling)
+- `-d <dir>` - output directory
+- `-o <name>` - output name/prefix
 
 ## Testing and Validation
 
 When modifying scripts:
 1. Verify SLURM directives are intact (especially memory and CPU requirements)
 2. Check that input file path handling preserves directory structure
-3. Ensure output files are created in the correct location (typically same directory as input)
+3. Ensure output files are created in the correct location
 4. Test with both hg38 and chm13 reference options if applicable
-5. Verify log files will be created in `./log/` directory (must exist before job submission)
-
-# Coding Standards for Bioinformatics Scripts
-
-## Shebang Format
-Always use SBATCH directives in the shebang:
-```bash
-#!/bin/bash
-#SBATCH -p rjobs,mjobs
-#SBATCH -J script_name
-#SBATCH -o ./log/%x.o%j
-#SBATCH -e ./log/%x.e%j
-#SBATCH --mem-per-cpu=4G
-#SBATCH -c 32
-
-set -euxo pipefail
-```
-
-## Shell Options (TODO: Apply to all scripts)
-All scripts should include `set -euxo pipefail` after SBATCH directives:
-- `-e`: Exit on error
-- `-u`: Error on undefined variables
-- `-x`: Print commands (for debugging which sample failed)
-- `-o pipefail`: Catch errors in pipes
-
-Note: These options are NOT inherited by child scripts when using `bash script.sh`. Each script needs its own `set` line.
-
-## Exit Status
-Always print the exit status at the end of scripts for error log identification:
-```bash
-echo "Exit status: $?"
-```
-
-This helps identify failed jobs when reviewing logs. With `set -e`, if a command fails the script exits immediately, so reaching this line indicates success (exit status 0).
-
-## Echo Statements
-With `set -x` enabled, all commands are printed with expanded variables before execution. Therefore, explicit `echo` statements for debugging or showing variable values are unnecessary and should be avoided. Only use `echo` for:
-- Error messages before `exit 1`
-- Usage information
-- Exit status at the end of scripts
-
-## Time Measurement
-Use the `time` command to measure execution time instead of manual `START_TIME`/`END_TIME` calculations:
-```bash
-# Good - use time command
-time "${TOOL}" args > output.log 2>&1
-
-# Bad - manual time calculation (deprecated)
-START_TIME=$(date +%s)
-"${TOOL}" args
-END_TIME=$(date +%s)
-ELAPSED=$((END_TIME - START_TIME))
-```
-
-The `time` command outputs:
-- `real`: Wall clock time (actual elapsed time)
-- `user`: CPU time in user mode (sum across all threads)
-- `sys`: CPU time in kernel mode
-
-For multi-threaded tools, `user` time will be greater than `real` time, which indicates parallel efficiency.
-
-## Usage Documentation
-- Use `# Usage:` comment at line 8 instead of extensive error handling
-- Use `# Output:` comment at line 9 to document output files
-- Keep usage examples concise and clear
-- Example: `# Usage: ./script.sh [--reference hg38|chm13] <input_file>`
-
-## Reference Genome Paths
-Standard reference genome paths and CHM13 branching:
-```bash
-if [ "$REFERENCE_TYPE" = "chm13" ]; then
-    REFERENCE_GENOME_PATH="/home/itoyu8/database/reference/chm13/v2.0/chm13v2.0_maskedY_rCRS.fa"
-else
-    REFERENCE_GENOME_PATH="/home/itoyu8/database/reference/hg38/GRCh38.d1.vd1/GRCh38.d1.vd1.fa"
-fi
-```
-
-For minimap2 MMI files:
-```bash
-if [ "$REFERENCE_TYPE" = "chm13" ]; then
-    REFERENCE_MMI_PATH="/home/itoyu8/database/reference/chm13/v2.0/chm13v2.0_maskedY_rCRS.mmi"
-else
-    REFERENCE_MMI_PATH="/home/itoyu8/database/reference/hg38/GRCh38.d1.vd1/GRCh38.d1.vd1.mmi"
-fi
-```
-
-## Thread Definition
-Always use SLURM variable with fallback:
-```bash
-THREADS=${SLURM_CPUS_PER_TASK:-32}
-```
-
-## Command Paths
-
-### Direct Binary Paths (Preferred)
-- BWA: `/home/itoyu8/bin/bwa/bwa-0.7.19/bwa`
-- Samtools: `/home/itoyu8/bin/samtools/samtools-1.19/samtools`
-- Minimap2: `/home/itoyu8/bin/minimap2/minimap2-2.28/minimap2`
-- Yak: `/home/itoyu8/bin/yak/yak-0.1/yak`
-- k8 (for paftools.js): `/home/itoyu8/bin/minimap2/k8-0.2.5/k8-Linux`
-
-### Container Usage
-Only use containers when direct binaries are not available:
-- GATK container: `/home/itoyu8/singularity/compat_parabricks-0.2.2.sif`
-- Container execution: `singularity exec ${CONTAINER_PATH} gatk`
-
-## Argument Parsing
-Use consistent argument parsing pattern:
-```bash
-INPUT_FILES=()
-REFERENCE_TYPE="hg38"
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --reference)
-            if [ "$2" = "chm13" ]; then
-                REFERENCE_TYPE="chm13"
-            elif [ "$2" = "hg38" ]; then
-                REFERENCE_TYPE="hg38"
-            else
-                echo "Error: --reference must be 'hg38' or 'chm13'"
-                exit 1
-            fi
-            shift 2
-            ;;
-        *)
-            INPUT_FILES+=("$1")
-            shift
-            ;;
-    esac
-done
-```
-
-## File Output
-
-### Output Path Convention (TODO: Standardize across all scripts)
-Use `-d` for output directory and `-o` for output name/prefix:
-```bash
-# Usage pattern
-script.sh -d /output/dir -o sample_name input.bam
-# → /output/dir/sample_name.vcf.gz
-
-# -o has a default, so -d alone works
-script.sh -d /output/dir input.bam
-# → /output/dir/output.vcf.gz (default name)
-```
-
-Implementation pattern:
-```bash
-OUTPUT_DIR="."
-OUTPUT_NAME="output"
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -d) OUTPUT_DIR="$2"; shift 2 ;;
-        -o) OUTPUT_NAME="$2"; shift 2 ;;
-        *)  INPUT_FILE="$1"; shift ;;
-    esac
-done
-
-mkdir -p "${OUTPUT_DIR}"
-OUTPUT_DIR=$(realpath "${OUTPUT_DIR}")
-# → Use ${OUTPUT_DIR}/${OUTPUT_NAME}.ext for outputs
-```
-
-### Current issues (TODO)
-1. Some scripts use realpath, others don't → Standardize to always use realpath
-2. Output directory not auto-created → Always `mkdir -p`
-3. Mix of output dir vs output filename → Migrate to `-d` / `-o` pattern above
-
-## Memory and CPU Settings
-Standard SBATCH settings:
-- Memory: `--mem-per-cpu=4G`
-- CPUs: `-c 32`
-- Queue: `-p rjobs,mjobs`
-
-## Docker Image Management
-
-### Building and Pushing to Docker Hub
-IMPORTANT: Always use a two-step tagging process. Direct tagging may not be recognized properly.
-
-```bash
-# Step 1: Build with platform specification and temporary tag
-docker build --platform linux/amd64 -t [image_name]-amd64:[version] -f ./Dockerfile .
-
-# Step 2: Re-tag for Docker Hub (this step is REQUIRED, don't skip)
-# Direct push without re-tagging may fail to be recognized
-docker tag [image_name]-amd64:[version] itoyu8/[image_name]:[version]
-
-# Step 3: Push to Docker Hub
-docker push itoyu8/[image_name]:[version]
-```
-
-Example workflow:
-```bash
-# Build rasusa image
-docker build --platform linux/amd64 -t rasusa-amd64:0.1.0 -f ./Dockerfile .
-
-# Re-tag (REQUIRED - don't skip this intermediate step)
-docker tag rasusa-amd64:0.1.0 itoyu8/rasusa:0.1.0
-
-# Push to Docker Hub
-docker push itoyu8/rasusa:0.1.0
-```
-
-### Why Two-Step Tagging?
-- Past experience shows that skipping the intermediate tagging step causes recognition issues
-- The re-tagging step ensures Docker properly registers the image for push
-- Always go through the temporary tag → Docker Hub tag workflow
-
-## File Transfer with SCP
-
-When requested by the user under their supervision, use `scp` to transfer files to remote servers:
-
-```bash
-scp <local_file> itoyu8@10.20.27.13:/home/itoyu8/project/pelt_expansion/rscarpia_validate/
-```
-
-**Important Notes:**
-- Only use scp when the user explicitly requests it and is actively monitoring
-- The user has configured SSH public key authentication for passwordless access
-- Common transfer targets:
-  - Development server: `itoyu8@10.20.27.13:/home/itoyu8/project/pelt_expansion/rscarpia_validate/`
+5. Verify `./log/` directory exists before job submission (logs go to `./log/%x.o%j`)
